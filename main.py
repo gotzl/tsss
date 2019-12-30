@@ -24,7 +24,7 @@ CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
 SAMPLERATE = 48000
 # SAMPLERATE = 192000
-FRAMESPERBUFFER = 1024
+FRAMESPERBUFFER = 512
 
 # pygame.mixer.init(buffer=512)
 # pygame.mixer.set_num_channels(32)
@@ -56,7 +56,7 @@ def mix(frame_count):
                 #     mutex.release()
 
     if len(frames) == 0:
-        return
+        return None
 
     # mix instruments together
     dd = np.sum(frames, axis=0, dtype=np.int32)
@@ -81,13 +81,24 @@ def callback(in_data, frame_count, time_info, status):
 
 
 p = pyaudio.PyAudio()
-stream = p.open(format=p.get_format_from_width(SAMPLEWIDTH),
-                channels=CHANNELS,
-                rate=SAMPLERATE,
-                frames_per_buffer=FRAMESPERBUFFER,
-                start=False,
-                output=True,
-                stream_callback=callback)
+
+info = p.get_host_api_info_by_index(0)
+numdevices = info.get('deviceCount')
+for i in range(0, numdevices):
+    if (p.get_device_info_by_host_api_device_index(0, i).get('maxOutputChannels')) > 0:
+        print("Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
+
+
+stream = p.open(
+    format=p.get_format_from_width(SAMPLEWIDTH),
+    channels=CHANNELS,
+    rate=SAMPLERATE,
+    frames_per_buffer=FRAMESPERBUFFER,
+    start=False,
+    output=True,
+    # output_device_index=8,
+    stream_callback=callback)
+
 
 
 try:
@@ -111,7 +122,7 @@ try:
     class Note(object):
         def __init__(self, path):
             self.wav = wave.open(path, 'rb')
-            self.decay = .1 * self.wav.getframerate()
+            self.decay = .6 * self.wav.getframerate()
             self.factor = int(self.wav.getframerate()/SAMPLERATE)
             self.decay_pos = -1
 
@@ -135,12 +146,12 @@ try:
                 data = []
                 for i in range(0, len(bytes), 3):
                     b = bytearray([0]) + bytes[i:i+3]
-                    data.append(struct.unpack('I', b)[0] >> 8)
+                    data.append(struct.unpack('i', b)[0] >> 8)
                 data = np.array(data, dtype=np.float)
 
                 # create x values for decay calculation
                 xi = np.linspace(self.decay_pos, self.decay_pos + frame_count * self.factor, int(len(data)/CHANNELS))
-                decayi = np.array(list(map(lambda x: x/self.decay, xi))).clip(min=0)
+                decayi = np.array(list(map(lambda x: np.exp(-x/(self.decay/4)), xi))).clip(min=0)
                 decay = np.empty((CHANNELS*xi.size,), dtype=xi.dtype)
                 decay[0::2] = decayi
                 decay[1::2] = decayi
@@ -248,7 +259,7 @@ try:
         if delta > 1:
         # if n == 0:
            last = time.time()
-           msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + n%50], delta
+           msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50], delta
            n += 1
 
         if msg:
@@ -265,22 +276,24 @@ try:
 
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
-        if active>0 and data is not None and len(data)==0:
+        if active>0 and len(data)==0:
             then = time.time()
             newdata = mix(FRAMESPERBUFFER)
 
-            _data = bytearray()
-            for i in newdata:
-                _data += bytearray(struct.pack('I',(i&0x00ffffff)<<8)[1:])
+            if newdata is not None:
+                _data = bytearray()
+                for i in newdata:
+                    _data += bytearray(struct.pack('I',(i&0x00ffffff)<<8)[1:])
 
-            mutex.acquire()
-            try:
-                data = bytes(_data)
-                # data = newdata.astype('V3')
-                # print(data)
-                # print(len(newdata),len(_data), time.time()-then)
-            finally:
-                mutex.release()
+                mutex.acquire()
+                try:
+                    data = bytes(_data)
+                    # data = newdata.astype('V3')
+                    # print(data)
+                    print(time.time()-then)
+                    # print([x.ending for x in chan_map[0]])
+                finally:
+                    mutex.release()
 
         if active != last_active:
             print("Active notes %i"%active)
