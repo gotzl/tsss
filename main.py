@@ -22,7 +22,7 @@ import glob
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
 SAMPLERATE = 48000
-#SAMPLERATE = 192000
+# SAMPLERATE = 192000
 FRAMESPERBUFFER = 512
 
 # pygame.mixer.init(buffer=512)
@@ -113,7 +113,7 @@ try:
     class Note(object):
         def __init__(self, path):
             self.wav = wave.open(path, 'rb')
-            self.decay = .7 * self.wav.getframerate()
+            self.decay = .1 * self.wav.getframerate()
             self.factor = int(self.wav.getframerate()/SAMPLERATE)
             self.decay_pos = -1
 
@@ -128,22 +128,30 @@ try:
 
         def getframe(self, frame_count):
             # read frames from the wave
-            data = self.wav.readframes(frame_count * self.factor)
+            data = np.frombuffer(self.wav.readframes(frame_count * self.factor), np.uint8)
+            # FIXME: this does not work!
             # get individual samples (24bit, little endian)
-            data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
+            # data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
 
             # apply decay
             if self.decay_pos >= 0:
-                # create x values for each channel
-                xi = np.linspace(self.decay_pos, frame_count * self.factor, int(len(data)/2))
-                x = np.empty((2*xi.size,), dtype=xi.dtype)
-                x[0::2] = xi
-                x[1::2] = xi
+                # create x values for left/right channel
+                xi = np.linspace(self.decay_pos, self.decay_pos + frame_count * self.factor, int(len(data)/(CHANNELS*SAMPLEWIDTH)))
+                decayi = np.array(list(map(lambda x: x/self.decay, xi))).clip(min=0)
+                decay = np.empty((CHANNELS*SAMPLEWIDTH*xi.size,), dtype=xi.dtype)
+                decay[0::6] = decayi
+                decay[1::6] = decayi
+                decay[2::6] = decayi
+                decay[3::6] = decayi
+                decay[4::6] = decayi
+                decay[5::6] = decayi
                 # get and apply decay factor
-                data -= np.array(list(map(lambda x: (x - self.decay)/self.decay, x))).astype(np.int32).clip(min=0)
+                data = (decay * data.astype(np.float)).astype(np.uint8)
                 self.decay_pos += frame_count * self.factor
 
-            # add silence if not enough data
+            data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
+
+            # add silence if not enough frames
             data = np.pad(data, [(0, frame_count * self.factor * CHANNELS - len(data))], mode='constant')
 
             if self.wav.getframerate() == SAMPLERATE:
@@ -234,11 +242,11 @@ try:
     while True:
         msg = midiin.get_message()
 
-#        delta = time.time() - last
-#        if delta > .5:
-#            last = time.time()
-#            msg = [NOTE_ON, 36 + n%50], delta
-#            n += 1
+        # delta = time.time() - last
+        # if delta > .5:
+        #    last = time.time()
+        #    msg = [NOTE_ON, 36 + n%50], delta
+        #    n += 1
 
         if msg:
             m, deltatime = msg
