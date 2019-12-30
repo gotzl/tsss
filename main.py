@@ -16,6 +16,7 @@ import numpy as np
 
 import sys
 import os
+import struct
 import time
 import glob
 
@@ -60,9 +61,6 @@ def mix(frame_count):
     # mix instruments together
     dd = np.sum(frames, axis=0, dtype=np.int32)
     # dd = np.mean(frames, axis=0, dtype=np.int32)
-
-    # make 24 bit output array, little endian
-    dd = dd.astype('V3').tobytes()
     return dd
 
 
@@ -128,28 +126,31 @@ try:
 
         def getframe(self, frame_count):
             # read frames from the wave
-            data = np.frombuffer(self.wav.readframes(frame_count * self.factor), np.uint8)
-            # FIXME: this does not work!
-            # get individual samples (24bit, little endian)
-            # data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
+            # data = np.frombuffer(self.wav.readframes(frame_count * self.factor), np.uint8)
+            bytes = self.wav.readframes(frame_count * self.factor)
 
             # apply decay
             if self.decay_pos >= 0:
-                # create x values for left/right channel
-                xi = np.linspace(self.decay_pos, self.decay_pos + frame_count * self.factor, int(len(data)/(CHANNELS*SAMPLEWIDTH)))
+                data = []
+                for i in range(0, len(bytes), 3):
+                    b = bytearray([0]) + bytes[i:i+3]
+                    data.append(struct.unpack('I', b)[0] >> 8)
+                data = np.array(data, dtype=np.float)
+
+                # create x values for decay calculation
+                xi = np.linspace(self.decay_pos, self.decay_pos + frame_count * self.factor, int(len(data)/CHANNELS))
                 decayi = np.array(list(map(lambda x: x/self.decay, xi))).clip(min=0)
-                decay = np.empty((CHANNELS*SAMPLEWIDTH*xi.size,), dtype=xi.dtype)
-                decay[0::6] = decayi
-                decay[1::6] = decayi
-                decay[2::6] = decayi
-                decay[3::6] = decayi
-                decay[4::6] = decayi
-                decay[5::6] = decayi
+                decay = np.empty((CHANNELS*xi.size,), dtype=xi.dtype)
+                decay[0::2] = decayi
+                decay[1::2] = decayi
                 # get and apply decay factor
-                data = (decay * data.astype(np.float)).astype(np.uint8)
+                data = (decay * data).astype(np.int32)
                 self.decay_pos += frame_count * self.factor
 
-            data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
+            else:
+                # FIXME: this does not work!
+                # get individual samples (24bit, little endian)
+                data = np.frombuffer(bytes, 'V3').astype('V4').view(np.int32)
 
             # add silence if not enough frames
             data = np.pad(data, [(0, frame_count * self.factor * CHANNELS - len(data))], mode='constant')
@@ -263,9 +264,17 @@ try:
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
         if active>0 and data is not None and len(data)==0:
+            newdata = mix(FRAMESPERBUFFER)
+
+            _data = bytearray()
+            for i in newdata:
+                _data += bytearray(struct.pack('I',(i&0x00ffffff)<<8)[1:])
+
+            # print(len(newdata),len(_data))
+
             mutex.acquire()
             try:
-                data = mix(FRAMESPERBUFFER)
+                data = bytes(_data)
             finally:
                 mutex.release()
 
