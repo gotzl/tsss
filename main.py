@@ -12,7 +12,7 @@ import pyaudio
 import wave
 import copy
 import numpy as np
-import scipy.signal as sps
+# import scipy.signal as sps
 
 import sys
 import os
@@ -39,7 +39,6 @@ except (EOFError, KeyboardInterrupt):
 
 
 mutex = Lock()
-multi = CHANNELS * SAMPLEWIDTH
 data = []
 chan_map = {}
 
@@ -78,7 +77,7 @@ def callback(in_data, frame_count, time_info, status):
         mutex.release()
 
     if dd is None or len(dd) == 0:
-        dd = np.zeros(frame_count * multi, dtype=np.int8)
+        dd = np.zeros(frame_count * CHANNELS * SAMPLEWIDTH, dtype=np.int8)
 
     return (dd, pyaudio.paContinue)
 
@@ -111,28 +110,56 @@ try:
         chan_map[sel[0]] = [instruments[i] for i in sel[1:]]
 
 
-    def getframe(wav, frame_count):
-        factor = int(wav.getframerate()/SAMPLERATE)
+    class Note(object):
+        def __init__(self, path):
+            self.wav = wave.open(path, 'rb')
+            self.decay = .7 * self.wav.getframerate()
+            self.factor = int(self.wav.getframerate()/SAMPLERATE)
+            self.decay_pos = -1
 
-        # read frames from the wave
-        data = wav.readframes(frame_count * factor)
-        # get individual samples (24bit, little endian)
-        data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
-        # add silence if not enough data
-        data = np.pad(data, [(0, frame_count * factor * CHANNELS - len(data))], mode='constant')
-        if wav.getframerate() == SAMPLERATE:
-            return data
+        def done(self):
+            return self.decay_pos >= self.decay or self.wav.tell() == self.wav.getnframes()
 
-        return data[::factor]
+        def close(self):
+            self.wav.close()
 
-        # # downsample to the output rate
-        # l = sps.resample(data[0::2], frame_count).astype(np.int32)
-        # r = sps.resample(data[1::2], frame_count).astype(np.int32)
-        # # put left and right channel back together again
-        # c = np.empty((l.size + r.size,), dtype=l.dtype)
-        # c[0::2] = l
-        # c[1::2] = r
-        # return np.array(c)
+        def end(self):
+            self.decay_pos = 0
+
+        def getframe(self, frame_count):
+            # read frames from the wave
+            data = self.wav.readframes(frame_count * self.factor)
+            # get individual samples (24bit, little endian)
+            data = np.frombuffer(data, 'V3').astype('V4').view(np.int32)
+
+            # apply decay
+            if self.decay_pos >= 0:
+                # create x values for each channel
+                xi = np.linspace(self.decay_pos, frame_count * self.factor, int(len(data)/2))
+                x = np.empty((2*xi.size,), dtype=xi.dtype)
+                x[0::2] = xi
+                x[1::2] = xi
+                # get and apply decay factor
+                data -= np.array(list(map(lambda x: (x - self.decay)/self.decay, x))).astype(np.int32).clip(min=0)
+                self.decay_pos += frame_count * self.factor
+
+            # add silence if not enough data
+            data = np.pad(data, [(0, frame_count * self.factor * CHANNELS - len(data))], mode='constant')
+
+            if self.wav.getframerate() == SAMPLERATE:
+                return data
+
+            # # downsample to the output rate
+            # l = sps.resample(data[0::2], frame_count).astype(np.int32)
+            # r = sps.resample(data[1::2], frame_count).astype(np.int32)
+            # # put left and right channel back together again
+            # c = np.empty((l.size + r.size,), dtype=l.dtype)
+            # c[0::2] = l
+            # c[1::2] = r
+            # return np.array(c)
+
+            return data[::self.factor]
+
 
     class Instrument(object):
         def __init__(self, name):
@@ -140,6 +167,7 @@ try:
             self.on = {}
             self.off = {}
             self.playing = {}
+            self.ending = {}
             self.offset = None
             print("Loading samples of %s"%self.name)
             self.get_samples()
@@ -163,19 +191,29 @@ try:
             notes = self.on if is_on else self.off
 
             if idx in self.playing:
-                self.playing[idx].close()
+                if idx in self.ending:
+                    self.ending[idx].close()
+                    del self.ending[idx]
+                self.ending[idx] = self.playing[idx]
+                self.ending[idx].end()
                 del self.playing[idx]
 
             if idx in notes.keys():
-                self.playing[idx] = wave.open(notes[idx][self.group%len(notes[idx])], 'rb')
+                self.playing[idx] = Note(notes[idx][self.group%len(notes[idx])])
                 self.group += 1
 
         def mix(self, frame_count):
-            frames = list(map(lambda x: getframe(x, frame_count), self.playing.values()))
-            remove = [idx for idx in self.playing if self.playing[idx].tell() == self.playing[idx].getnframes()]
+            frames = list(map(lambda x: x.getframe(frame_count), list(self.playing.values())+list(self.ending.values())))
+            remove = [idx for idx in self.playing if self.playing[idx].done()]
             for idx in remove:
                 self.playing[idx].close()
                 del self.playing[idx]
+
+            remove = [idx for idx in self.ending if self.ending[idx].done()]
+            for idx in remove:
+                self.ending[idx].close()
+                del self.ending[idx]
+
             return np.sum(frames, axis=0, dtype=np.int32)
             # return np.mean(frames, axis=0, dtype=np.int32)
 
@@ -214,9 +252,9 @@ try:
             # finally:
             #     mutex.release()
 
-        active = sum(map(lambda x:len(x.playing), chan_map[0]))
+        active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
-        if len(data)==0 and active>0:
+        if active>0 and data is not None and len(data)==0:
             mutex.acquire()
             try:
                 data = mix(FRAMESPERBUFFER)
