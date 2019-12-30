@@ -24,7 +24,7 @@ CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
 SAMPLERATE = 48000
 # SAMPLERATE = 192000
-FRAMESPERBUFFER = 512
+FRAMESPERBUFFER = 1024
 
 # pygame.mixer.init(buffer=512)
 # pygame.mixer.set_num_channels(32)
@@ -128,6 +128,7 @@ try:
             # read frames from the wave
             # data = np.frombuffer(self.wav.readframes(frame_count * self.factor), np.uint8)
             bytes = self.wav.readframes(frame_count * self.factor)
+            # print(bytes)
 
             # apply decay
             if self.decay_pos >= 0:
@@ -243,11 +244,12 @@ try:
     while True:
         msg = midiin.get_message()
 
-        # delta = time.time() - last
-        # if delta > .5:
-        #    last = time.time()
-        #    msg = [NOTE_ON, 36 + n%50], delta
-        #    n += 1
+        delta = time.time() - last
+        if delta > 1:
+        # if n == 0:
+           last = time.time()
+           msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + n%50], delta
+           n += 1
 
         if msg:
             m, deltatime = msg
@@ -264,17 +266,19 @@ try:
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
         if active>0 and data is not None and len(data)==0:
+            then = time.time()
             newdata = mix(FRAMESPERBUFFER)
 
             _data = bytearray()
             for i in newdata:
                 _data += bytearray(struct.pack('I',(i&0x00ffffff)<<8)[1:])
 
-            # print(len(newdata),len(_data))
-
             mutex.acquire()
             try:
                 data = bytes(_data)
+                # data = newdata.astype('V3')
+                # print(data)
+                # print(len(newdata),len(_data), time.time()-then)
             finally:
                 mutex.release()
 
