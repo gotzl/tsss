@@ -13,6 +13,7 @@ import wave
 import copy
 import numpy as np
 # import scipy.signal as sps
+import matplotlib.pyplot as plt
 
 import sys
 import os
@@ -20,11 +21,17 @@ import struct
 import time
 import glob
 
+import wavdecode
+
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
+# SAMPLERATE = 24000
 SAMPLERATE = 48000
 # SAMPLERATE = 192000
-FRAMESPERBUFFER = 512
+# FRAMESPERBUFFER = 512
+FRAMESPERBUFFER = 1024
+# FRAMESPERBUFFER = 2048
+# FRAMESPERBUFFER = 4096
 
 # pygame.mixer.init(buffer=512)
 # pygame.mixer.set_num_channels(32)
@@ -48,7 +55,7 @@ def mix(frame_count):
     frames = []
     for instruments in chan_map.values():
         for i in instruments:
-            if len(i.playing) > 0:
+            if len(i.playing)+len(i.ending) > 0:
                 # mutex.acquire()
                 # try:
                 frames.append(i.mix(frame_count))
@@ -99,7 +106,13 @@ stream = p.open(
     # output_device_index=8,
     stream_callback=callback)
 
-
+def decode(bytes):
+    data = []
+    for i in range(0, len(bytes), 3):
+        b = bytes[i:i+3]
+        b = bytearray([0]) + b
+        data.append(struct.unpack('i',b)[0]>>8)
+    return data
 
 try:
     instruments = [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
@@ -120,19 +133,22 @@ try:
 
 
     class Note(object):
-        def __init__(self, path):
+        def __init__(self, path, decay):
+            print("Starting note %s"%os.path.split(path)[1], self)
             self.wav = wave.open(path, 'rb')
-            self.decay = .6 * self.wav.getframerate()
-            self.factor = int(self.wav.getframerate()/SAMPLERATE)
+            self.decay = decay
             self.decay_pos = -1
+            self.factor = int(self.wav.getframerate()/SAMPLERATE)
 
         def done(self):
-            return self.decay_pos >= self.decay or self.wav.tell() == self.wav.getnframes()
+            return self.decay_pos >= len(self.decay) or self.wav.tell() == self.wav.getnframes()
 
         def close(self):
+            print("Closing note.", self)
             self.wav.close()
 
         def end(self):
+            print("Ending note.", self)
             self.decay_pos = 0
 
         def getframe(self, frame_count):
@@ -143,32 +159,27 @@ try:
 
             # apply decay
             if self.decay_pos >= 0:
-                data = []
-                for i in range(0, len(bytes), 3):
-                    b = bytearray([0]) + bytes[i:i+3]
-                    data.append(struct.unpack('i', b)[0] >> 8)
-                data = np.array(data, dtype=np.float)
-
-                # create x values for decay calculation
-                xi = np.linspace(self.decay_pos, self.decay_pos + frame_count * self.factor, int(len(data)/CHANNELS))
-                decayi = np.array(list(map(lambda x: np.exp(-x/(self.decay/4)), xi))).clip(min=0)
-                decay = np.empty((CHANNELS*xi.size,), dtype=xi.dtype)
-                decay[0::2] = decayi
-                decay[1::2] = decayi
                 # get and apply decay factor
-                data = (decay * data).astype(np.int32)
-                self.decay_pos += frame_count * self.factor
+                # print("before")
+                # print(np.frombuffer(bytes, 'V3').astype('V4').view(np.int32))
+                _data = np.frombuffer(bytes, np.int8).astype(np.float)
+                decay = self.decay[self.decay_pos:self.decay_pos+len(_data)]
+                decay = np.pad(decay, [(0, len(_data) - len(decay))], mode='constant')
+                bytes = (decay * _data).astype(np.int8)
+                self.decay_pos += len(decay)
+                # print(self.decay_pos, self.done())
 
-            else:
-                # FIXME: this does not work!
-                # get individual samples (24bit, little endian)
-                data = np.frombuffer(bytes, 'V3').astype('V4').view(np.int32)
+            # else:
+            # FIXME: this does not work!
+            # get individual samples (24bit, little endian)
+            _data = np.frombuffer(bytes, 'V3').astype('V4').view(np.int32)
+            # print(len(_data), _data)
 
             # add silence if not enough frames
-            data = np.pad(data, [(0, frame_count * self.factor * CHANNELS - len(data))], mode='constant')
+            _data = np.pad(_data, [(0, frame_count * self.factor * CHANNELS - len(_data))], mode='constant')
 
             if self.wav.getframerate() == SAMPLERATE:
-                return data
+                return _data
 
             # # downsample to the output rate
             # l = sps.resample(data[0::2], frame_count).astype(np.int32)
@@ -179,7 +190,7 @@ try:
             # c[1::2] = r
             # return np.array(c)
 
-            return data[::self.factor]
+            return _data[::self.factor]
 
 
     class Instrument(object):
@@ -198,7 +209,7 @@ try:
                 wav = os.path.split(f)
                 note = os.path.split(wav[0])
                 # sound = pygame.mixer.Sound(f)
-                notes = self.off  if 'Release' in f else self.on
+                notes = self.off if 'Release' in f else self.on
                 idx = int(note[-1][:2])
                 if idx not in notes: notes[idx] = []
                 notes[idx].append(f)
@@ -206,6 +217,20 @@ try:
 
             self.offset = 36 - sorted(self.on.keys())[0]
             self.group = 0
+
+            # calculate the decay factor
+            wav = wave.open(list(self.on.values())[0][0], 'rb')
+            decay = .6 * wav.getframerate()
+            decay_x = np.linspace(0, decay, np.ceil(decay))
+            decay_fac = np.array(list(map(lambda x: np.exp(-x/(decay/4)), decay_x))).clip(min=0)
+
+            # plt.plot(decay_x,decay_fac)
+            # plt.show()
+
+            self.decay = np.empty((CHANNELS*SAMPLEWIDTH*decay_fac.size,), dtype=decay_fac.dtype)
+            for i in range(CHANNELS*SAMPLEWIDTH):
+                self.decay[i::(CHANNELS*SAMPLEWIDTH)] = decay_fac
+            wav.close()
 
         def play(self, i, is_on):
             idx = i - self.offset
@@ -220,7 +245,7 @@ try:
                 del self.playing[idx]
 
             if idx in notes.keys():
-                self.playing[idx] = Note(notes[idx][self.group%len(notes[idx])])
+                self.playing[idx] = Note(notes[idx][self.group%len(notes[idx])], decay=self.decay)
                 self.group += 1
 
         def mix(self, frame_count):
@@ -255,12 +280,12 @@ try:
     while True:
         msg = midiin.get_message()
 
-        delta = time.time() - last
-        if delta > 1:
-        # if n == 0:
-           last = time.time()
-           msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50], delta
-           n += 1
+        # delta = time.time() - last
+        # if delta > 1 and n<2:
+        # # if n == 0:
+        #    last = time.time()
+        #    msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50], delta
+        #    n += 1
 
         if msg:
             m, deltatime = msg
@@ -276,22 +301,15 @@ try:
 
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
-        if active>0 and len(data)==0:
+        if len(data)==0:
             then = time.time()
             newdata = mix(FRAMESPERBUFFER)
 
             if newdata is not None:
-                _data = bytearray()
-                for i in newdata:
-                    _data += bytearray(struct.pack('I',(i&0x00ffffff)<<8)[1:])
-
                 mutex.acquire()
                 try:
-                    data = bytes(_data)
-                    # data = newdata.astype('V3')
-                    # print(data)
-                    print(time.time()-then)
-                    # print([x.ending for x in chan_map[0]])
+                    data = newdata.astype('V3')
+                    # print(time.time()-then)
                 finally:
                     mutex.release()
 
