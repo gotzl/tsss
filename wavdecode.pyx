@@ -5,16 +5,13 @@ import numpy as np
 cimport numpy as np
 cimport cython
 
-ctypedef np.float_t DTYPE_t
-
 cdef int to_sample(const unsigned char[:] bits):
     return (bits[2] << 24) | (bits[1] << 16) | (bits[0] << 8)
 
 cdef const unsigned char[:] from_sample(int sample):
     return struct.pack('i', int(sample))[1:]
-    # return sample.to_bytes(3, byteorder='little', signed=True) # slower
 
-def mix(frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
+def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
     cdef float v, s
     cdef short dec
     cdef short m = 4

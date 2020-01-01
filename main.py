@@ -5,20 +5,14 @@ import threading
 from multiprocessing import Lock
 from rtmidi.midiutil import open_midiinput
 from rtmidi.midiconstants import NOTE_ON, NOTE_OFF
-# import pygame_sdl2
-# pygame_sdl2.import_as_pygame()
-# import pygame
 
 import pyaudio
 import wave
-import copy
 import numpy as np
-# import scipy.signal as sps
 import matplotlib.pyplot as plt
 
 import sys
 import os
-import struct
 import time
 import glob
 
@@ -34,8 +28,6 @@ FRAMESPERBUFFER = 1024
 # FRAMESPERBUFFER = 2048
 # FRAMESPERBUFFER = 4096
 
-# pygame.mixer.init(buffer=512)
-# pygame.mixer.set_num_channels(32)
 
 base = sys.argv[1] if len(sys.argv) > 1 else "/home/gotzl/Downloads/"
 port = None  # sys.argv[1] if len(sys.argv) > 1 else None
@@ -43,7 +35,6 @@ port = None  # sys.argv[1] if len(sys.argv) > 1 else None
 try:
     midiin, port_name = open_midiinput(port)
 except (EOFError, KeyboardInterrupt):
-    # pygame.mixer.quit()
     sys.exit()
 
 
@@ -54,47 +45,33 @@ chan_map = {}
 
 def getframes(instruments, frame_count):
     frames = []
-    for inst in instruments:
-        for note in list(inst.playing.values())+list(inst.ending.values()):
-            fr, de = note.getframe(frame_count)
-            frames.append((fr, de, len(fr), len(de) > 0))
+    mutex.acquire()
+    try:
+        for inst in instruments:
+            for note in list(inst.playing.values())+list(inst.ending.values()):
+                fr, de = note.getframe(frame_count)
+                frames.append((fr, de, len(fr), len(de) > 0))
+    finally:
+        mutex.release()
     return frames
 
 
-def mixer():
+def mixer(frame_count):
     global data, chan_map
 
-    frames = getframes(chan_map[0], FRAMESPERBUFFER)
-
+    frames = getframes(chan_map[0], frame_count)
     now = time.time()
-
     newdata = wavdecode.mix(
         frames,
-        FRAMESPERBUFFER,
+        frame_count,
         CHANNELS,
         SAMPLEWIDTH)
-    print(time.time()-now)
-
-    mutex.acquire()
-    try:
-        data = bytes(newdata)
-    finally:
-        mutex.release()
+    print(time.time() - now)
+    return bytes(newdata)
 
 
 def callback(in_data, frame_count, time_info, status):
-    # dd = mix(frame_count)
-    global data
-    mutex.acquire()
-    try:
-        dd = copy.copy(data)
-        data = []
-    finally:
-        mutex.release()
-
-    if dd is None or len(dd) == 0:
-        dd = np.zeros(frame_count * CHANNELS * SAMPLEWIDTH, dtype=np.int8)
-
+    dd = mixer(frame_count)
     return (dd, pyaudio.paContinue)
 
 
@@ -267,23 +244,25 @@ try:
             print("[%s] @%0.6f %r" % (port_name, timer, m))
 
             if m[0] not in [NOTE_ON, NOTE_OFF]: continue
-            # mutex.acquire()
-            # try:
-            list(map(lambda x: x.play(m[1], m[0] == NOTE_ON), chan_map[0]))
-            # finally:
-            #     mutex.release()
+            mutex.acquire()
+            try:
+                list(map(lambda x: x.play(m[1], m[0] == NOTE_ON), chan_map[0]))
+            finally:
+                mutex.release()
 
-        if len(data) == 0:
-            mixer()
+        mutex.acquire()
+        try:
+            list(map(lambda x:x.cleanup(), chan_map[0]))
+        finally:
+            mutex.release()
 
-        list(map(lambda x:x.cleanup(), chan_map[0]))
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
         if active != last_active:
             print("Active notes %i"%active)
             last_active = active
 
-        time.sleep(0.001)
+        time.sleep(0.01)
 
 except KeyboardInterrupt:
     print('')
