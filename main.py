@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # TheSuperSimpleSampler
+import threading
 from multiprocessing import Lock
 from rtmidi.midiutil import open_midiinput
 from rtmidi.midiconstants import NOTE_ON, NOTE_OFF
@@ -25,8 +26,8 @@ import wavdecode
 
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
-SAMPLERATE = 24000
-# SAMPLERATE = 48000
+# SAMPLERATE = 24000
+SAMPLERATE = 48000
 # SAMPLERATE = 192000
 # FRAMESPERBUFFER = 512
 FRAMESPERBUFFER = 1024
@@ -49,7 +50,29 @@ except (EOFError, KeyboardInterrupt):
 mutex = Lock()
 data = []
 chan_map = {}
+done = False
+t = None
 
+def mixer():
+    global data
+    while not done:
+        if len(data) == 0:
+            then = time.time()
+
+            newdata = wavdecode.mix(
+                chan_map[0],
+                FRAMESPERBUFFER,
+                CHANNELS,
+                SAMPLEWIDTH)
+
+            mutex.acquire()
+            try:
+                # print(len(newdata))
+                print(time.time()-then)
+                data = bytes(newdata)
+                # data = newdata.tobytes()
+            finally:
+                mutex.release()
 
 def callback(in_data, frame_count, time_info, status):
     # dd = mix(frame_count)
@@ -247,6 +270,9 @@ try:
     print("Starting Audio stream and MIDI input loop")
     stream.start_stream()
 
+    t = threading.Thread(target=mixer)
+    t.start()
+
     timer = time.time()
     last = time.time()
     last_active = 0
@@ -273,33 +299,22 @@ try:
             # finally:
             #     mutex.release()
 
+        list(map(lambda x:x.cleanup(), chan_map[0]))
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
-
-        if len(data)==0:
-            then = time.time()
-            newdata = wavdecode.mix(chan_map[0], FRAMESPERBUFFER, CHANNELS, SAMPLEWIDTH)
-            mutex.acquire()
-            try:
-                # print(len(newdata))
-                # print(time.time()-then)
-                data = bytes(newdata)
-                # data = newdata.tobytes()
-            finally:
-                mutex.release()
-
-            list(map(lambda x:x.cleanup(), chan_map[0]))
 
         if active != last_active:
             print("Active notes %i"%active)
             last_active = active
 
-        time.sleep(0.001)
+        time.sleep(0.01)
 
 except KeyboardInterrupt:
     print('')
 finally:
     print("Exit.")
+    done = True
     # pygame.mixer.quit()
+    if t: t.join()
 
     stream.stop_stream()
     stream.close()
