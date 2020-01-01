@@ -1,28 +1,20 @@
 # cython: boundscheck=False, wraparound=False, nonecheck=False
 
+import struct
 import numpy as np
 cimport numpy as np
 cimport cython
 
 ctypedef np.float_t DTYPE_t
 
-
 cdef int to_sample(const unsigned char[:] bits):
     return (bits[2] << 24) | (bits[1] << 16) | (bits[0] << 8)
 
-cdef const unsigned char[:] from_sample(np.uint32_t sample):
-    return sample.to_bytes(4, byteorder='little')[1:]
+cdef const unsigned char[:] from_sample(int sample):
+    return struct.pack('i', int(sample))[1:]
+    # return sample.to_bytes(3, byteorder='little', signed=True) # slower
 
-def decay(const unsigned char[:] _bytes, np.ndarray[DTYPE_t, ndim=1] decay):
-    cdef int v
-    cdef bytearray d = bytearray(_bytes.shape[0])
-    cdef int i = 0
-    for i in range(0, _bytes.shape[0], 3):
-        v = to_sample(_bytes[i:i+3])
-        d[i:i+3] = from_sample(np.uint32(v*decay[i/3]))
-    return d
-
-def mix(instruments, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
+def mix(frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
     cdef float v, s
     cdef short dec
     cdef short m = 4
@@ -31,17 +23,13 @@ def mix(instruments, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
 
     cdef const unsigned char[:] fr
     cdef double[:] de
-    # cdef double[:] df = np.zeros(n)
+    cdef double[:] df = np.zeros(n)
 
     cdef bytearray d = bytearray(n)
 
-    frames = []
-    for inst in instruments:
-        for note in list(inst.playing.values())+list(inst.ending.values()):
-            fr, de = note.getframe(frame_count)
-            frames.append((fr, de, len(fr), len(de)>0))
-
     f = len(frames)
+    if f == 0: return d
+
     for i in range(n):
         # the current sample vaule
         v = 0
@@ -66,13 +54,14 @@ def mix(instruments, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
         # d  = from_sample(np.uint32(v))
 
         # store value
-        # df[i] = v
+        df[i] = v
 
+        # k = width * i
+        # from_sample(int(v))
+        # d[k:k+width] = b'\00\00\00'
+        # d[k:k+width] = from_sample(int(v))
+
+    for i in range(n):
         k = width * i
-        d[k:k+width] = from_sample(np.uint32(v))
-
-    #for i in range(n):
-    #    k = width * i
-    #    d[k:k+width] = from_sample(np.uint32(df[i]))
-
+        d[k:k+width] = from_sample(int(df[i]))
     return d

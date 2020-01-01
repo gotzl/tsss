@@ -53,6 +53,15 @@ chan_map = {}
 done = False
 t = None
 
+
+def getframes(instruments, frame_count):
+    frames = []
+    for inst in instruments:
+        for note in list(inst.playing.values())+list(inst.ending.values()):
+            fr, de = note.getframe(frame_count)
+            frames.append((fr, de, len(fr), len(de)>0))
+    return frames
+
 def mixer():
     global data
     while not done:
@@ -60,7 +69,7 @@ def mixer():
             then = time.time()
 
             newdata = wavdecode.mix(
-                chan_map[0],
+                getframes(chan_map[0], FRAMESPERBUFFER),
                 FRAMESPERBUFFER,
                 CHANNELS,
                 SAMPLEWIDTH)
@@ -68,7 +77,7 @@ def mixer():
             mutex.acquire()
             try:
                 # print(len(newdata))
-                print(time.time()-then)
+                # print(time.time()-then)
                 data = bytes(newdata)
                 # data = newdata.tobytes()
             finally:
@@ -271,7 +280,7 @@ try:
     stream.start_stream()
 
     t = threading.Thread(target=mixer)
-    t.start()
+    # t.start()
 
     timer = time.time()
     last = time.time()
@@ -300,6 +309,7 @@ try:
             #     mutex.release()
 
         list(map(lambda x:x.cleanup(), chan_map[0]))
+        mixer()
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
         if active != last_active:
