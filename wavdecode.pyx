@@ -43,7 +43,7 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
                 # get the k'th sample, combine three bytes
                 s = float(to_sample(fr[ k : k + width ]))
                 # if decay array exists, use it
-                if dec: s *= de[ int(k/width) ]
+                if dec: s *= de[m * i]
                 # update the current sample value
                 df[i] += s
 
