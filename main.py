@@ -50,8 +50,6 @@ except (EOFError, KeyboardInterrupt):
 mutex = Lock()
 data = []
 chan_map = {}
-done = False
-t = None
 
 
 def getframes(instruments, frame_count):
@@ -59,29 +57,30 @@ def getframes(instruments, frame_count):
     for inst in instruments:
         for note in list(inst.playing.values())+list(inst.ending.values()):
             fr, de = note.getframe(frame_count)
-            frames.append((fr, de, len(fr), len(de)>0))
+            frames.append((fr, de, len(fr), len(de) > 0))
     return frames
 
+
 def mixer():
-    global data
-    while not done:
-        if len(data) == 0:
-            then = time.time()
+    global data, chan_map
 
-            newdata = wavdecode.mix(
-                getframes(chan_map[0], FRAMESPERBUFFER),
-                FRAMESPERBUFFER,
-                CHANNELS,
-                SAMPLEWIDTH)
+    frames = getframes(chan_map[0], FRAMESPERBUFFER)
 
-            mutex.acquire()
-            try:
-                # print(len(newdata))
-                # print(time.time()-then)
-                data = bytes(newdata)
-                # data = newdata.tobytes()
-            finally:
-                mutex.release()
+    now = time.time()
+
+    newdata = wavdecode.mix(
+        frames,
+        FRAMESPERBUFFER,
+        CHANNELS,
+        SAMPLEWIDTH)
+    print(time.time()-now)
+
+    mutex.acquire()
+    try:
+        data = bytes(newdata)
+    finally:
+        mutex.release()
+
 
 def callback(in_data, frame_count, time_info, status):
     # dd = mix(frame_count)
@@ -160,46 +159,15 @@ try:
 
         def getframe(self, frame_count):
             # read frames from the wave
-            # data = np.frombuffer(self.wav.readframes(frame_count * self.factor), np.uint8)
             _bytes = self.wav.readframes(frame_count * self.factor)
+
+            # create decay values
             decay = np.array([])
             if self.decay_pos >= 0:
                 self.decay_pos += int(len(_bytes)/3)
                 decay = self.decay[self.decay_pos:self.decay_pos+int(len(_bytes)/3)]
                 decay = np.pad(decay, [(0, int(len(_bytes)/3) - len(decay))], mode='constant')
             return _bytes, decay
-
-            # # apply decay
-            # if self.decay_pos >= 0:
-            #     # get and apply decay factor
-            #     decay = self.decay[self.decay_pos:self.decay_pos+int(len(_bytes)/3)]
-            #     decay = np.pad(decay, [(0, int(len(_bytes)/3) - len(decay))], mode='constant')
-            #     _bytes = wavdecode.decay(_bytes, decay)
-            #     self.decay_pos += len(decay)
-            #     # print(self.decay_pos, self.done())
-            #
-            # # else:
-            # # FIXME: this does not work!
-            # # get individual samples (24bit, little endian)
-            # _data = np.frombuffer(_bytes, 'V3').astype('V4').view(np.int32)
-            # # print(len(_data), _data)
-            #
-            # # add silence if not enough frames
-            # _data = np.pad(_data, [(0, frame_count * self.factor * CHANNELS - len(_data))], mode='constant')
-            #
-            # if self.wav.getframerate() == SAMPLERATE:
-            #     return _data
-            #
-            # # # downsample to the output rate
-            # # l = sps.resample(data[0::2], frame_count).astype(np.int32)
-            # # r = sps.resample(data[1::2], frame_count).astype(np.int32)
-            # # # put left and right channel back together again
-            # # c = np.empty((l.size + r.size,), dtype=l.dtype)
-            # # c[0::2] = l
-            # # c[1::2] = r
-            # # return np.array(c)
-            #
-            # return _data[::self.factor]
 
 
     class Instrument(object):
@@ -279,9 +247,6 @@ try:
     print("Starting Audio stream and MIDI input loop")
     stream.start_stream()
 
-    t = threading.Thread(target=mixer)
-    # t.start()
-
     timer = time.time()
     last = time.time()
     last_active = 0
@@ -308,23 +273,22 @@ try:
             # finally:
             #     mutex.release()
 
+        if len(data) == 0:
+            mixer()
+
         list(map(lambda x:x.cleanup(), chan_map[0]))
-        mixer()
         active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
 
         if active != last_active:
             print("Active notes %i"%active)
             last_active = active
 
-        time.sleep(0.01)
+        time.sleep(0.001)
 
 except KeyboardInterrupt:
     print('')
 finally:
     print("Exit.")
-    done = True
-    # pygame.mixer.quit()
-    if t: t.join()
 
     stream.stop_stream()
     stream.close()

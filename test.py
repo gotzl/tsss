@@ -8,6 +8,7 @@ CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bi
 SAMPLERATE = 48000
 FRAMESPERBUFFER = 48000
+FRAMESPERBUFFER = 1024
 
 wav = wave.open(glob.glob("/home/gotzl/Downloads/2 x 8'/*/*")[0], 'rb')
 frame = wav.readframes(FRAMESPERBUFFER)

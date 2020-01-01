@@ -25,22 +25,22 @@ def mix(frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
     cdef double[:] de
     cdef double[:] df = np.zeros(n)
 
-    cdef bytearray d = bytearray(n)
+    cdef bytearray d = bytearray(n*width)
 
     f = len(frames)
     if f == 0: return d
 
-    for i in range(n):
-        # the current sample vaule
-        v = 0
+    # loop over frames
+    for j in range(f):
+        fr, de, l, dec = frames[j]
 
-        # index for the samples, they are 24bit (two channel) arrays
-        # with 192000 sampling, so skip over every 'm' sample
-        k = width * m * i
+        # loop over l/r sample values
+        for i in range(n):
 
-        # loop over frames
-        for j in range(f):
-            fr, de, l, dec = frames[j]
+            # index for the samples, they are 24bit (two channel) arrays
+            # with 192000 sampling, so skip over every 'm' sample
+            k = width * m * i
+
             # check if the frame has data
             if l > k + width:
                 # get the k'th sample, combine three bytes
@@ -48,20 +48,10 @@ def mix(frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
                 # if decay array exists, use it
                 if dec: s *= de[ int(k/width) ]
                 # update the current sample value
-                v += s
-
-        # d[i:i+width] = bytes(np.uint32(v).data)[1:]
-        # d  = from_sample(np.uint32(v))
-
-        # store value
-        df[i] = v
-
-        # k = width * i
-        # from_sample(int(v))
-        # d[k:k+width] = b'\00\00\00'
-        # d[k:k+width] = from_sample(int(v))
+                df[i] += s
 
     for i in range(n):
         k = width * i
         d[k:k+width] = from_sample(int(df[i]))
+
     return d
