@@ -12,6 +12,7 @@ import sys
 import os
 import time
 
+sys.path.append('tsss')
 import wavdecode
 
 
@@ -56,7 +57,7 @@ def mixer(frame_count):
             frame_count,
             CHANNELS,
             SAMPLEWIDTH)
-        print(time.time() - now)
+        # print(len(frames), len(newdata),time.time() - now)
     finally:
         mutex.release()
     return bytes(newdata)
@@ -107,13 +108,13 @@ if __name__ == '__main__':
         while True:
             msg = midiin.get_message()
 
-            delta = time.time() - last
-            if delta > 1 and n<2:
-                # if n == 0:
-                last = time.time()
-                msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50], delta
-                n += 1
-            elif delta > 1 and n > 1: break
+            # delta = time.time() - last
+            # if delta > 1 and n<2:
+            #     # if n == 0:
+            #     last = time.time()
+            #     msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50], delta
+            #     n += 1
+            # elif delta > 1 and n > 1: break
 
             if msg:
                 m, deltatime = msg
@@ -167,8 +168,8 @@ if __name__ == '__main__':
         print("Starting Audio stream and MIDI input loop")
         stream.start_stream()
 
-        cProfile.run('eventloop()')
-        # eventloop()
+        # cProfile.run('eventloop()')
+        eventloop()
 
     except KeyboardInterrupt:
         print('')
