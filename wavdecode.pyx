@@ -31,6 +31,7 @@ def decay(const unsigned char[:] _bytes, np.ndarray[DTYPE_t, ndim=1] decay):
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 def mix(instruments, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
     cdef np.float_t v
+    cdef short m = 8
     cdef int n = frame_count*channels*width
     cdef bytearray d = bytearray(n)
     frames = []
@@ -38,16 +39,14 @@ def mix(instruments, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
         for f in list(i.playing.values())+list(i.ending.values()):
             frames.append(f.getframe(frame_count))
 
-    #d = []
     for i in range(0, n, width):
         v = 0
         for f, e in frames:
-            if len(f) > 4*i+3:
-                s = to_sample(f[4*i:4*i+3])
-                if len(e) > 0: s *= e[int(4*i/3)]
+            if len(f) > m*i+3:
+                s = to_sample(f[ m*i : m*i+3 ])
+                #s = np.int32(int.from_bytes(b'\00'+f[m*i:m*i+3], "little"))
+                if len(e) > 0: s *= e[ int(m*i/3) ]
                 v += s
-        #print(from_sample(np.uint32(v)), bytes(np.uint32(v).data)[1:])
-        #d[i:i+width] = from_sample(np.uint32(v))
-        #d.append(np.int16(v))
-        d[i:i+width] =  bytes(np.uint32(v).data)[1:]
+        # d[i:i+width] = bytes(np.uint32(v).data)[1:]
+        d[i:i+width] = from_sample(np.uint32(v))
     return d # np.array(d, dtype=np.int16)
