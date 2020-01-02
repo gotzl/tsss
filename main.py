@@ -177,9 +177,9 @@ if __name__ == '__main__':
                 for reg, regname in regs.items():
                     try:
                         registers[ch, reg] = Instrument.Instrument(inst['path'], regname)
-                    except:
+                    except Exception as e:
                         print("Unable to open %s"%regname)
-
+                        print(e)
 
         print("Starting Audio stream and MIDI input loop")
         stream.start_stream()

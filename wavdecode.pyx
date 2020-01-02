@@ -19,7 +19,7 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
     cdef unsigned int i, j, k, f, l, m
     cdef int n = frame_count*channels
 
-    cdef const unsigned char[:] fr
+    # cdef const unsigned char[:] fr
     cdef double[:] de
     cdef double[:] df = np.zeros(n)
 
@@ -32,23 +32,28 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
     for j in range(f):
         fr, de, l, dec, m = frames[j]
 
+        _bytes = isinstance(fr, bytes)
+
         # loop over l/r sample values
         for i in range(n):
+            s = 0
+            if _bytes:
+                # index for the samples, they are width-bit (two channel) arrays with rate of m*SAMPLERATE
+                k = width * m * i
+                # check if the frame has data
+                if l > k + width:
+                    # get the k'th sample, combine three bytes
+                    s = float(to_sample(fr[ k : k + width ]))
 
-            # index for the samples, they are 24bit (two channel) arrays
-            # with 192000 sampling, so skip over every 'm' sample
-            k = width * m * i
+            else:
+                if l > m*i:
+                    s = fr[m*i]
 
-            # check if the frame has data
-            if l > k + width:
-                # get the k'th sample, combine three bytes
-                s = float(to_sample(fr[ k : k + width ]))
+            # if decay array exists, use it
+            if dec: s *= de[m * i]
 
-                # if decay array exists, use it
-                if dec: s *= de[m * i]
-
-                # update the current sample value
-                df[i] += s
+            # update the current sample value
+            df[i] += s
 
     #df = librosa.effects.pitch_shift(np.frombuffer(df, np.float), 1024, n_steps=4)
     if shift>0:
