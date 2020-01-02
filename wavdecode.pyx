@@ -14,7 +14,7 @@ cdef const unsigned char[:] from_sample(int sample):
 def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width):
     cdef float v, s
     cdef short dec
-    cdef short m = 4
+    cdef short m = 4 # multiplier to skip frames
     cdef unsigned int i, j, k, f, l
     cdef int n = frame_count*channels
 

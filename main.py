@@ -5,8 +5,7 @@ import cProfile
 from multiprocessing import Lock
 from rtmidi.midiutil import open_midiinput
 from rtmidi.midiconstants import NOTE_ON, NOTE_OFF
-
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 import sys
 import os
@@ -21,8 +20,9 @@ SAMPLEWIDTH = 3 # 24bit
 # SAMPLERATE = 24000
 SAMPLERATE = 48000
 # SAMPLERATE = 192000
-# FRAMESPERBUFFER = 512
-FRAMESPERBUFFER = 1024
+# FRAMESPERBUFFER = 256
+FRAMESPERBUFFER = 512
+# FRAMESPERBUFFER = 1024
 # FRAMESPERBUFFER = 2048
 # FRAMESPERBUFFER = 4096
 
@@ -50,7 +50,7 @@ def mixer(frame_count):
     global data, chan_map
     mutex.acquire()
     try:
-        frames = getframes(chan_map[0], frame_count)
+        frames = getframes(chan_map.values(), frame_count)
         now = time.time()
         newdata = wavdecode.mix(
             frames,
@@ -66,7 +66,6 @@ def mixer(frame_count):
 def callback(in_data, frame_count, time_info, status):
     dd = mixer(frame_count)
     return (dd, pyaudio.paContinue)
-
 
 
 if __name__ == '__main__':
@@ -108,11 +107,12 @@ if __name__ == '__main__':
         while True:
             msg = midiin.get_message()
 
-            # delta = time.time() - last
+            delta = time.time() - last
             # if delta > 1 and n<2:
-            #     # if n == 0:
+            # if n == 0:
+            # if delta > 1:
             #     last = time.time()
-            #     msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50], delta
+            #     msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50, 50], delta
             #     n += 1
             # elif delta > 1 and n > 1: break
 
@@ -121,26 +121,29 @@ if __name__ == '__main__':
                 timer += deltatime
                 print("[%s] @%0.6f %r" % (port_name, timer, m))
 
-                if m[0] not in [NOTE_ON, NOTE_OFF]: continue
+                cmd = m[0]&0xfff0
+                if cmd not in [NOTE_ON, NOTE_OFF]: continue
+                # some send NOTE_ON with velocity=0 instead of NOTE_OFF
+                if m[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
                 mutex.acquire()
                 try:
-                    list(map(lambda x: x.play(m[1], m[0] == NOTE_ON), chan_map[0]))
+                    chan_map[m[0]&0xf].play(m[1], cmd == NOTE_ON)
                 finally:
                     mutex.release()
 
             mutex.acquire()
             try:
-                list(map(lambda x:x.cleanup(), chan_map[0]))
+                list(map(lambda x:x.cleanup(), chan_map.values()))
             finally:
                 mutex.release()
 
-            active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map[0]))
+            active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map.values()))
 
             if active != last_active:
                 print("Active notes %i"%active)
                 last_active = active
 
-            time.sleep(0.01)
+            time.sleep(0.001)
 
     try:
         instruments = [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
@@ -150,20 +153,20 @@ if __name__ == '__main__':
 
         print("Map instrument to MIDI channel. ")
         while True:
-            chan = input("Type channel number, then instrument number, ie '0 1 2 3 4' and hit ENTER (or leave blank and hit ENTER)")
+            chan = input("Type channel number, then instrument number, ie '0 1' and hit ENTER (or leave blank and hit ENTER)")
             if len(chan) == 0: break
             sel = chan.split()
-            if len(sel) < 2:
+            if len(sel) != 2:
                 print("Invalid input")
                 continue
             sel = list(map(int, sel))
-            chan_map[sel[0]] = [instruments[i] for i in sel[1:]]
+            chan_map[sel[0]] = instruments[sel[1]]
 
         if len(chan_map) == 0:
             raise Exception("No instrument selected")
 
         for c, i in chan_map.items():
-            chan_map[c] = list(map(Instrument.Instrument, i))
+            chan_map[c] = Instrument.Instrument(i)
 
         print("Starting Audio stream and MIDI input loop")
         stream.start_stream()
