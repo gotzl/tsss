@@ -1,0 +1,16 @@
+Harpsichord:
+  path: /home/gotzl/Downloads/
+  channel:
+    0:
+      0: Front 8'
+      1: Rear 8'
+      2: 2 x 8'
+      3: 4'
+      4: Tutti
+    1:
+      5: Front 8'
+      6: Rear 8'
+      7: 2 x 8'
+      8: 4'
+      9: Tutti
+      10: Lautenzug

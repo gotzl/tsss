@@ -33,7 +33,7 @@ port = None  # sys.argv[1] if len(sys.argv) > 1 else None
 
 mutex = Lock()
 data = []
-chan_map = {}
+registers = {}
 
 
 def getframes(instruments, frame_count):
@@ -48,10 +48,10 @@ def getframes(instruments, frame_count):
 
 
 def mixer(frame_count):
-    global data, chan_map
+    global data, registers
     mutex.acquire()
     try:
-        frames = getframes(chan_map.values(), frame_count)
+        frames = getframes(registers.values(), frame_count)
         now = time.time()
         newdata = wavdecode.mix(
             frames,
@@ -72,6 +72,7 @@ def callback(in_data, frame_count, time_info, status):
 if __name__ == '__main__':
     import Instrument
     import pyaudio
+    import yaml
 
     try:
         midiin, port_name = open_midiinput(port)
@@ -105,6 +106,7 @@ if __name__ == '__main__':
         last = time.time()
         last_active = 0
         n = 0
+        offset = False
         while True:
             msg = midiin.get_message()
 
@@ -122,24 +124,43 @@ if __name__ == '__main__':
                 timer += deltatime
                 print("[%s] @%0.6f %r" % (port_name, timer, m))
 
+                if m[0] == 0xCB:
+                    # enable/disable registers
+                    for key, reg in registers.items():
+                        if key[1] == m[1]:
+                            reg.active = not reg.active
+                            print('%s register \'%s\''%('Enabling' if reg.active else 'Disabling', reg.name))
+
+                    # enable/disable offset from 399Hz -> 440Hz
+                    if m[1] == 25:
+                        offset = not offset
+                        print('%s register offset'%('Enabling' if offset else 'Disabling'))
+
+                    continue
+
                 cmd = m[0]&0xfff0
                 chan = m[0]&0xf
-                if cmd not in [NOTE_ON, NOTE_OFF] or chan not in chan_map: continue
+
+                if cmd not in [NOTE_ON, NOTE_OFF]: continue
+
                 # some send NOTE_ON with velocity=0 instead of NOTE_OFF
                 if m[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
+
                 mutex.acquire()
                 try:
-                    chan_map[chan].play(m[1] + 2, cmd == NOTE_ON)
+                    for key, reg in registers.items():
+                        if key[0] == chan and reg.active:
+                            reg.play(m[1] + (2 if offset else 0), cmd == NOTE_ON)
                 finally:
                     mutex.release()
 
             mutex.acquire()
             try:
-                list(map(lambda x:x.cleanup(), chan_map.values()))
+                list(map(lambda x:x.cleanup(), registers.values()))
             finally:
                 mutex.release()
 
-            active = sum(map(lambda x:len(x.playing)+len(x.ending), chan_map.values()))
+            active = sum(map(lambda x:len(x.playing)+len(x.ending), registers.values()))
 
             if active != last_active:
                 print("Active notes %i"%active)
@@ -148,27 +169,17 @@ if __name__ == '__main__':
             time.sleep(0.001)
 
     try:
-        instruments = [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
+        instruments = yaml.safe_load(open('instruments.yaml'))
 
-        print("Found the following instruments:")
-        for i, p in enumerate(instruments): print(i, p)
+        for name, inst in instruments.items():
+            print('Opening %s'%name)
+            for ch, regs in inst['channel'].items():
+                for reg, regname in regs.items():
+                    try:
+                        registers[ch, reg] = Instrument.Instrument(inst['path'], regname)
+                    except:
+                        print("Unable to open %s"%regname)
 
-        print("Map instrument to MIDI channel. ")
-        while True:
-            chan = input("Type channel number, then instrument number, ie '0 1' and hit ENTER (or leave blank and hit ENTER)")
-            if len(chan) == 0: break
-            sel = chan.split()
-            if len(sel) != 2:
-                print("Invalid input")
-                continue
-            sel = list(map(int, sel))
-            chan_map[sel[0]] = instruments[sel[1]]
-
-        if len(chan_map) == 0:
-            raise Exception("No instrument selected")
-
-        for c, i in chan_map.items():
-            chan_map[c] = Instrument.Instrument(i)
 
         print("Starting Audio stream and MIDI input loop")
         stream.start_stream()

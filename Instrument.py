@@ -7,19 +7,21 @@ import Note
 
 
 class Instrument(object):
-    def __init__(self, name):
+    def __init__(self, base, name):
+        self.base = base
         self.name = name
         self.on = {}
         self.off = {}
         self.playing = {}
         self.ending = {}
+        self.active = False
         self.offset = None
-        print("Loading samples of %s"%self.name)
+        print("Loading samples for %s"%self.name)
         self.get_samples()
 
     def get_samples(self):
-        from main import CHANNELS, base
-        for f in glob.glob(str(os.path.join(base, self.name) + '/*/*.wav')):
+        from main import CHANNELS
+        for f in glob.glob(str(os.path.join(self.base, self.name) + '/*/*.wav')):
             wav = os.path.split(f)
             note = os.path.split(wav[0])
             # sound = pygame.mixer.Sound(f)
