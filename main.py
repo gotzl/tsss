@@ -18,6 +18,7 @@ import wavdecode
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
 # SAMPLERATE = 24000
+# SAMPLERATE = 41000
 SAMPLERATE = 48000
 # SAMPLERATE = 192000
 # FRAMESPERBUFFER = 256
@@ -41,7 +42,7 @@ def getframes(instruments, frame_count):
     for inst in instruments:
         for note in list(inst.playing.values())+list(inst.ending.values()):
             fr, de = note.getframe(frame_count)
-            frames.append((fr, de, len(fr), len(de) > 0))
+            frames.append((fr, de, len(fr), len(de) > 0, note.factor))
 
     return frames
 
@@ -56,7 +57,7 @@ def mixer(frame_count):
             frames,
             frame_count,
             CHANNELS,
-            SAMPLEWIDTH)
+            SAMPLEWIDTH, 0)
         # print(len(frames), len(newdata),time.time() - now)
     finally:
         mutex.release()
@@ -122,12 +123,13 @@ if __name__ == '__main__':
                 print("[%s] @%0.6f %r" % (port_name, timer, m))
 
                 cmd = m[0]&0xfff0
-                if cmd not in [NOTE_ON, NOTE_OFF]: continue
+                chan = m[0]&0xf
+                if cmd not in [NOTE_ON, NOTE_OFF] or chan not in chan_map: continue
                 # some send NOTE_ON with velocity=0 instead of NOTE_OFF
                 if m[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
                 mutex.acquire()
                 try:
-                    chan_map[m[0]&0xf].play(m[1], cmd == NOTE_ON)
+                    chan_map[chan].play(m[1] + 2, cmd == NOTE_ON)
                 finally:
                     mutex.release()
 

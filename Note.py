@@ -10,7 +10,7 @@ class Note(object):
         self.wav = wave.open(path, 'rb')
         self.decay = decay
         self.decay_pos = -1
-        self.factor = int(self.wav.getframerate()/SAMPLERATE)
+        self.factor = int(np.ceil(self.wav.getframerate()/SAMPLERATE))
 
     def done(self):
         return self.decay_pos >= len(self.decay) or self.wav.tell() == self.wav.getnframes()
