@@ -1,15 +1,18 @@
 import glob
 import os
 import wave
+from multiprocessing.pool import ThreadPool
+
 import librosa
 import numpy as np
 
 import Note
-from main import SAMPLERATE
+
+library = {}
 
 
 class Instrument(object):
-    def __init__(self, base, name):
+    def __init__(self, base, lowest, name, keys):
         self.base = base
         self.name = name
         self.on = {}
@@ -17,54 +20,63 @@ class Instrument(object):
         self.playing = {}
         self.ending = {}
         self.active = False
-        self.offset = None
+        self.group = 0
+        self.decay = None
         print("Loading samples for %s"%self.name)
-        self.get_samples()
-        # self.complete_samples(-4, 61)
-        self.complete_samples(3, 56)
+        self.get_samples(lowest)
+        self.complete_samples(*keys)
+
+    def create_sample(self, target, is_on):
+        from main import SAMPLERATE
+        notes = self.on if is_on else self.off
+        source = min(notes, key=lambda x: abs(x - target))
+        w = notes[source][0]
+        id = "%s_%i"%(w, target)
+        if id not in library:
+            print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))
+            data, sr = librosa.load(w, mono=False, sr=SAMPLERATE)
+            l = librosa.effects.pitch_shift(
+                np.asfortranarray(data[0]),
+                sr, n_steps=target-source)
+            r = librosa.effects.pitch_shift(
+                np.asfortranarray(data[1]),
+                sr, n_steps=target-source)
+            library[id] = np.column_stack((l, r)).ravel()*0x80000000, sr, 2
+        return target, library[id]
 
     def complete_samples(self, low, hi):
-        on, off = {}, {}
-        for i in range(low, hi+1):
-            sr = SAMPLERATE
-            if i not in self.on:
-                idx = min(self.on, key=lambda x:abs(x-i))
-                print('adding note',i,idx, i-idx)
-                w = self.on[idx][0]
-                on[i] = librosa.effects.pitch_shift(
-                    librosa.load(w, sr=sr)[0],
-                    sr, n_steps=i-idx)
-                print(len(on[i]), on[i].dtype , wave.open(w,'rb').getnframes())
+        pool = ThreadPool(4)
+        on = pool.map(lambda i: self.create_sample(i, True),
+                      [i for i in range(low, hi+1) if i not in self.on])
+        off = pool.map(lambda i: self.create_sample(i, False),
+                       [i for i in range(low, hi+1) if i not in self.off])
+        pool.close()
+        pool.join()
 
-            if i not in self.off:
-                idx = min(self.off, key=lambda x:abs(x-i))
-                print('adding note',i,idx, i-idx)
-                w = self.off[idx][0]
-                off[i] = librosa.effects.pitch_shift(
-                    librosa.load(w, sr=sr)[0],
-                    sr, n_steps=i-idx)
+        self.on.update({i:j for i,j in on})
+        self.off.update({i:j for i,j in off})
 
-        self.on.update(on)
-        self.off.update(off)
-
-    def get_samples(self):
-        from main import CHANNELS
-        for f in glob.glob(str(os.path.join(self.base, self.name) + '/*/*.wav')):
+    def get_samples(self, lowest):
+        from main import CHANNELS, SAMPLERATE
+        offset = None
+        for f in sorted(glob.glob(str(os.path.join(self.base, self.name) + '/*/*.wav'))):
             wav = os.path.split(f)
             note = os.path.split(wav[0])
             # sound = pygame.mixer.Sound(f)
             notes = self.off if 'Release' in f else self.on
-            idx = int(note[-1][:2])
+
+            i = int(note[-1][:2])
+            if offset is None:
+                offset = i
+
+            idx = lowest + i - offset
             if idx not in notes: notes[idx] = []
+
             notes[idx].append(f)
             notes[idx] = sorted(notes[idx])
 
-        self.offset = 36 - sorted(self.on.keys())[0]
-        self.group = 0
-
         # calculate the decay factor
-        wav = wave.open(list(self.on.values())[0][0], 'rb')
-        decay = .6 * wav.getframerate()
+        decay = .6 * SAMPLERATE
         decay_x = np.linspace(0, decay, int(np.ceil(decay)))
         decay_fac = np.array(list(map(lambda x: np.exp(-x/(decay/4)), decay_x))).clip(min=0)
 
@@ -74,10 +86,8 @@ class Instrument(object):
         self.decay = np.empty((CHANNELS*decay_fac.size,), dtype=decay_fac.dtype)
         for i in range(CHANNELS):
             self.decay[i::CHANNELS] = decay_fac
-        wav.close()
 
-    def play(self, i, is_on):
-        idx = i - self.offset
+    def play(self, idx, is_on):
         notes = self.on if is_on else self.off
 
         if idx in self.playing:
@@ -90,10 +100,10 @@ class Instrument(object):
 
         if idx in notes.keys():
             if isinstance(notes[idx], list):
-                self.playing[idx] = Note.Note(notes[idx][self.group%len(notes[idx])], decay=self.decay)
+                self.playing[idx] = Note.WavNote(notes[idx][self.group%len(notes[idx])], decay=self.decay)
                 self.group += 1
             else:
-                self.playing[idx] = Note.RawNote(notes[idx], decay=self.decay)
+                self.playing[idx] = Note.Note(notes[idx][0], notes[idx][1], notes[idx][2], decay=self.decay)
 
     def cleanup(self):
         # frames = list(map(lambda x: x.getframe(frame_count), list(self.playing.values())+list(self.ending.values())))

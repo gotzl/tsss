@@ -1,2 +1,6 @@
 pyaudio
 python-rtmidi
+numpy
+librosa
+yaml
+cython

@@ -1,16 +1,18 @@
-import os
 import wave
+import os
 import numpy as np
 
 
-class RawNote(object):
-    def __init__(self, data, decay):
-        print("Starting raw note", self)
+class Note(object):
+    def __init__(self, data, rate, channel, decay):
+        print("Starting note", self)
+        from main import SAMPLERATE
         self.pos = 1
         self.data = data
         self.decay = decay
         self.decay_pos = -1
-        self.factor = 1
+        self.factor = int(np.ceil(rate/SAMPLERATE))
+        self.channel = channel
 
     def done(self):
         return self.decay_pos >= len(self.decay) or self.pos >= len(self.data)
@@ -22,48 +24,37 @@ class RawNote(object):
         print("Ending note.", self)
         self.decay_pos = 0
 
-    def getframe(self, frame_count):
-        # read frames from the wave
-        _data = self.data[self.pos:min(len(self.data), self.pos + frame_count * self.factor)]
-        self.pos += frame_count * self.factor
-
+    def getdecay(self, frame_count):
         # create decay values
         decay = np.array([])
         if self.decay_pos >= 0:
-            self.decay_pos += int(len(_data)/3)
-            decay = self.decay[self.decay_pos:self.decay_pos+int(len(_data)/3)]
-            decay = np.pad(decay, [(0, int(len(_data)/3) - len(decay))], mode='constant')
-        return _data, decay
+            decay = self.decay[self.decay_pos:self.decay_pos + 2*frame_count]
+            decay = np.pad(decay, [(0, 2*frame_count - len(decay))], mode='constant')
+            self.decay_pos += 2*frame_count
+        return decay
+
+    def getframe(self, frame_count):
+        # read frames from the wave
+        m = frame_count * self.channel * self.factor
+        _data = self.data[self.pos:min(len(self.data), self.pos + m)]
+        self.pos += m
+        return _data, self.getdecay(frame_count)
 
 
-class Note(object):
+class WavNote(Note):
     def __init__(self, path, decay):
-        from main import SAMPLERATE
-        print("Starting note %s"%os.path.split(path)[1], self)
         self.wav = wave.open(path, 'rb')
-        self.decay = decay
-        self.decay_pos = -1
-        self.factor = int(np.ceil(self.wav.getframerate()/SAMPLERATE))
+        super().__init__(None, self.wav.getframerate(), self.wav.getnchannels(), decay)
+        print("Wave %s"%os.path.split(path)[1], self)
 
     def done(self):
         return self.decay_pos >= len(self.decay) or self.wav.tell() == self.wav.getnframes()
 
     def close(self):
-        print("Closing note.", self)
+        super().close()
         self.wav.close()
 
-    def end(self):
-        print("Ending note.", self)
-        self.decay_pos = 0
-
     def getframe(self, frame_count):
-        # read frames from the wave
+        # read frames from the wave, its in bytes, so be aware of 16/24 bitnes...
         _bytes = self.wav.readframes(frame_count * self.factor)
-
-        # create decay values
-        decay = np.array([])
-        if self.decay_pos >= 0:
-            self.decay_pos += int(len(_bytes)/3)
-            decay = self.decay[self.decay_pos:self.decay_pos+int(len(_bytes)/3)]
-            decay = np.pad(decay, [(0, int(len(_bytes)/3) - len(decay))], mode='constant')
-        return _bytes, decay
+        return _bytes, self.getdecay(frame_count)

@@ -1,4 +1,4 @@
-# cython: boundscheck=False, wraparound=False, nonecheck=False
+## cython: boundscheck=False, wraparound=False, nonecheck=False
 
 # import librosa
 import numpy as np
@@ -13,9 +13,16 @@ cdef void from_sample(int sample, unsigned char[:] d, int idx):
     d[idx+1] = (sample>>16)&0xff
     d[idx+2] = (sample>>24)&0xff
 
+cpdef int[:] decode(const unsigned char[:] _bytes):
+    cdef int n = int(len(_bytes)/3)
+    cdef int[:] df = np.zeros(n).astype(np.int32)
+    for i in range(n):
+        df[i] = to_sample(_bytes[i*3:i*3+3])
+    return df
+
 def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width, short shift):
     cdef float v, s
-    cdef short dec
+    cdef short dec, c
     cdef unsigned int i, j, k, f, l, m
     cdef int n = frame_count*channels
 
@@ -35,34 +42,27 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
         _bytes = isinstance(fr, bytes)
 
         # loop over l/r sample values
-        for i in range(n):
-            s = 0
-            if _bytes:
-                # index for the samples, they are width-bit (two channel) arrays with rate of m*SAMPLERATE
-                k = width * m * i
-                # check if the frame has data
-                if l > k + width:
-                    # get the k'th sample, combine three bytes
-                    s = float(to_sample(fr[ k : k + width ]))
+        for i from 0 <= i < n by channels:
+            for c in range(channels):
+                s = 0
+                if _bytes:
+                    # index for the samples, they are width-bit (two channel) arrays with rate of m*SAMPLERATE
+                    k = width * m * i + width * c
+                    # check if the frame has data
+                    if l > k + width:
+                        # get the k'th sample, combine three bytes
+                        s = float(to_sample(fr[ k : k + width ]))
 
-            else:
-                if l > m*i:
-                    s = fr[m*i]
+                else:
+                    k = m * i + c
+                    if l > k:
+                        s = fr[k]
 
-            # if decay array exists, use it
-            if dec: s *= de[m * i]
+                # if decay array exists, use it
+                if dec: s *= de[i + c]
 
-            # update the current sample value
-            df[i] += s
-
-    #df = librosa.effects.pitch_shift(np.frombuffer(df, np.float), 1024, n_steps=4)
-    if shift>0:
-        left, right = df[0::2], df[1::2]
-        lf, rf = np.fft.rfft(left), np.fft.rfft(right)
-        lf, rf = np.roll(lf, shift), np.roll(rf, shift)
-        lf[0:shift], rf[0:shift] = 0, 0
-        nl, nr = np.fft.irfft(lf), np.fft.irfft(rf)
-        df = np.column_stack((nl, nr)).ravel()
+                # update the current sample value
+                df[i + c] += s
 
     for i in range(n):
         k = width * i

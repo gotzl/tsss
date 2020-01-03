@@ -14,6 +14,7 @@ import time
 sys.path.append('tsss')
 import wavdecode
 
+DEBUG = True
 
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
@@ -73,6 +74,13 @@ if __name__ == '__main__':
     import Instrument
     import pyaudio
     import yaml
+    import signal
+
+    stop = False
+    def signal_handler(sig, frame):
+        global stop
+        stop = True
+    signal.signal(signal.SIGINT, signal_handler)
 
     try:
         midiin, port_name = open_midiinput(port)
@@ -107,52 +115,58 @@ if __name__ == '__main__':
         last_active = 0
         n = 0
         offset = False
-        while True:
+
+        if DEBUG:
+            registers[0, (203, 0)].active = True
+
+
+        while not stop:
             msg = midiin.get_message()
 
             delta = time.time() - last
             # if delta > 1 and n<2:
             # if n == 0:
-            # if delta > 1:
-            #     last = time.time()
-            #     msg = [NOTE_ON if n%2 == 0 else NOTE_OFF, 36 + (n>>1)%50, 50], delta
-            #     n += 1
-            # elif delta > 1 and n > 1: break
+            if DEBUG and delta > 1:
+                last = time.time()
+                _min = min(registers[0, (203, 0)].on)
+                _max = max(registers[0, (203, 0)].on)
+                msg = [NOTE_ON if n%2 == 0 else NOTE_OFF,
+                       _min + (n>>1)%(_max-_min),
+                       50], delta
+                n += 1
 
             if msg:
                 m, deltatime = msg
                 timer += deltatime
                 print("[%s] @%0.6f %r" % (port_name, timer, m))
 
-                if m[0] == 0xCB:
-                    # enable/disable registers
-                    for key, reg in registers.items():
-                        if key[1] == m[1]:
-                            reg.active = not reg.active
-                            print('%s register \'%s\''%('Enabling' if reg.active else 'Disabling', reg.name))
-
-                    # enable/disable offset from 399Hz -> 440Hz
-                    if m[1] == 25:
-                        offset = not offset
-                        print('%s register offset'%('Enabling' if offset else 'Disabling'))
-
-                    continue
-
                 cmd = m[0]&0xfff0
                 chan = m[0]&0xf
 
-                if cmd not in [NOTE_ON, NOTE_OFF]: continue
+                if cmd in [NOTE_ON, NOTE_OFF]:
+                    # some send NOTE_ON with velocity=0 instead of NOTE_OFF
+                    if m[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
 
-                # some send NOTE_ON with velocity=0 instead of NOTE_OFF
-                if m[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
+                    mutex.acquire()
+                    try:
+                        for key, reg in registers.items():
+                            if key[0] == chan and reg.active:
+                                reg.play(m[1] + (2 if offset else 0), cmd == NOTE_ON)
+                    finally:
+                        mutex.release()
 
-                mutex.acquire()
-                try:
+                else:
+                    # enable/disable registers
                     for key, reg in registers.items():
-                        if key[0] == chan and reg.active:
-                            reg.play(m[1] + (2 if offset else 0), cmd == NOTE_ON)
-                finally:
-                    mutex.release()
+                        if key[1] == (m[0], m[1]):
+                            reg.active = not reg.active
+                            print('%s register \'%s\''%('Enabling' if reg.active else 'Disabling', reg.name))
+
+                    if m[0] == 0xCB:
+                        # enable/disable offset from 399Hz -> 440Hz
+                        if m[1] == 25:
+                            offset = not offset
+                            print('%s register offset'%('Enabling' if offset else 'Disabling'))
 
             mutex.acquire()
             try:
@@ -169,17 +183,24 @@ if __name__ == '__main__':
             time.sleep(0.001)
 
     try:
+        now = time.time()
         instruments = yaml.safe_load(open('instruments.yaml'))
 
         for name, inst in instruments.items():
             print('Opening %s'%name)
-            for ch, regs in inst['channel'].items():
-                for reg, regname in regs.items():
+            for n, ch in inst['channel'].items():
+                for reg, regname in ch['registers'].items():
                     try:
-                        registers[ch, reg] = Instrument.Instrument(inst['path'], regname)
+                        registers[n, tuple(map(int, reg.split()))] = Instrument.Instrument(
+                            inst['path'],
+                            inst['lowest'],
+                            regname,
+                            ch['keys']
+                        )
                     except Exception as e:
                         print("Unable to open %s"%regname)
                         print(e)
+        print(time.time()-now)
 
         print("Starting Audio stream and MIDI input loop")
         stream.start_stream()

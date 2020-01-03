@@ -1,16 +1,23 @@
 Harpsichord:
-  path: /home/gotzl/Downloads/
+  path: /run/media/gotzl/stuff/realsamples/German Harpsichord 1741
+  lowest: 36 # midi id of the first available sample (a C2)
   channel:
     0:
-      0: Front 8'
-      1: Rear 8'
-      2: 2 x 8'
-      3: 4'
-      4: Tutti
+      keys: [24, 92] # the keys available, from C1 to G#6
+#      keys: [35, 86]
+      registers: # midi commands for (de)activating registers
+        203 0: Front 8'
+        203 1: Rear 8'
+        203 2: 2 x 8'
+        203 3: 4'
+        203 4: Tutti
     1:
-      5: Front 8'
-      6: Rear 8'
-      7: 2 x 8'
-      8: 4'
-      9: Tutti
-      10: Lautenzug
+      keys: [24, 92] # the keys available, from C1 to G#6
+#      keys: [35, 86]
+      registers:
+        203 5: Front 8'
+        203 6: Rear 8'
+        203 7: 2 x 8'
+        203 8: 4'
+        203 9: Tutti
+        203 10: Lautenzug
