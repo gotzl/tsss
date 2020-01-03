@@ -1,7 +1,7 @@
-TheSuperSimpleSampler is a sampler writen to play samples from [https://www.realsamples.de], 
+TheSuperSimpleSampler is a sampler writen to play samples from [realsamples](https://www.realsamples.de),
 specifically the samples of the `German Harpsichord 1741`.
 It is used together with a [Johannus](https://www.johannus.com) digital organ so some things are very specific
-for this application, eg the selection of registers via MIDI commands send by the organ and usage of two manuals (respectively MIDI channels).   
+for this combination, eg the selection of registers via MIDI commands send by the organ and usage of two manuals (respectively MIDI channels).
 
 
 # Install
@@ -10,6 +10,7 @@ git clone https://github.com/gotzl/tsss.git
 pip3 install -r requirements.txt # --user
 python3 setup.py build_ext --inplace
 ``` 
+For this to work, you need a CPP compiler and portaudio installed on your system.
 
 
 # Running it
@@ -28,4 +29,5 @@ To start the sampler, type
 * For keys where no sample exists, the samples are resampled to lower/higher pitch. 
 This takes a large amount of time.
 * Samples are expected to start with a number that reflects their tune relative to each other
-* Code is a bit messy... 
+* Code is a bit messy...
+* Expects 24bit LE 2 channel wavs

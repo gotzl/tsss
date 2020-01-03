@@ -1,6 +1,5 @@
 import glob
 import os
-import wave
 from multiprocessing.pool import ThreadPool
 
 import librosa
@@ -34,14 +33,21 @@ class Instrument(object):
         id = "%s_%i"%(w, target)
         if id not in library:
             print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))
-            data, sr = librosa.load(w, mono=False, sr=SAMPLERATE)
+            data, sr = librosa.load(w, mono=False, sr=SAMPLERATE, res_type='polyphase') # plyphase seems to be fast and as good as kaiser_best
+
             l = librosa.effects.pitch_shift(
                 np.asfortranarray(data[0]),
                 sr, n_steps=target-source)
             r = librosa.effects.pitch_shift(
                 np.asfortranarray(data[1]),
                 sr, n_steps=target-source)
-            library[id] = np.column_stack((l, r)).ravel()*0x80000000, sr, 2
+            # l, r = data[0], data[1]
+
+            # store the data together with sample rate and nchannels
+            library[id] = [np.column_stack((l, r)).ravel(), sr, 2]
+            library[id][0] *= 0x800000 # compensate shift of librosa to -1 / 1 range
+            library[id][0] *= 0x100    # 'special' hacky treatment of 24 bit signed integer
+
         return target, library[id]
 
     def complete_samples(self, low, hi):
@@ -99,11 +105,11 @@ class Instrument(object):
             del self.playing[idx]
 
         if idx in notes.keys():
-            if isinstance(notes[idx], list):
+            if isinstance(notes[idx][0], str):
                 self.playing[idx] = Note.WavNote(notes[idx][self.group%len(notes[idx])], decay=self.decay)
                 self.group += 1
             else:
-                self.playing[idx] = Note.Note(notes[idx][0], notes[idx][1], notes[idx][2], decay=self.decay)
+                self.playing[idx] = Note.Note(*notes[idx], decay=self.decay)
 
     def cleanup(self):
         # frames = list(map(lambda x: x.getframe(frame_count), list(self.playing.values())+list(self.ending.values())))

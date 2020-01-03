@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 
 # TheSuperSimpleSampler
-import cProfile
 from multiprocessing import Lock
 from rtmidi.midiutil import open_midiinput
 from rtmidi.midiconstants import NOTE_ON, NOTE_OFF
 # import matplotlib.pyplot as plt
 
 import sys
-import os
 import time
 
 sys.path.append('tsss')
@@ -108,7 +106,6 @@ if __name__ == '__main__':
         output_device_index=outdev,
         stream_callback=callback)
 
-
     def eventloop():
         timer = time.time()
         last = time.time()
@@ -200,12 +197,11 @@ if __name__ == '__main__':
                     except Exception as e:
                         print("Unable to open %s"%regname)
                         print(e)
-        print(time.time()-now)
 
-        print("Starting Audio stream and MIDI input loop")
+        print("Loading of instruments took %.2f seconds"%(time.time()-now))
+        print("Starting Audio stream and MIDI input loop. You may start hitting the keys!")
         stream.start_stream()
 
-        # cProfile.run('eventloop()')
         eventloop()
 
     except KeyboardInterrupt:
