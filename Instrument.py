@@ -28,8 +28,11 @@ class Instrument(object):
     def create_sample(self, target, is_on):
         from main import SAMPLERATE
         notes = self.on if is_on else self.off
-        source = min(notes, key=lambda x: abs(x - target))
+
+        # source = min(notes, key=lambda x: abs(x - target))
+        source = target - 13 if target > max(notes) else target + 13
         w = notes[source][0]
+
         id = "%s_%i"%(w, target)
         if id not in library:
             print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))

@@ -26,7 +26,8 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
     cdef unsigned int i, j, k, f, l, m
     cdef int n = frame_count*channels
 
-    # cdef const unsigned char[:] fr
+    cdef const unsigned char[:] frb
+    cdef float[:] fr
     cdef double[:] de
     cdef double[:] df = np.zeros(n)
 
@@ -37,9 +38,13 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
 
     # loop over frames
     for j in range(f):
-        fr, de, l, dec, m = frames[j]
+        _fr, de, l, dec, m = frames[j]
 
-        _bytes = isinstance(fr, bytes)
+        _bytes = isinstance(_fr, bytes)
+        if _bytes:
+            frb = _fr
+        else: fr = _fr
+
 
         # loop over l/r sample values
         for i from 0 <= i < n by channels:
@@ -51,7 +56,7 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
                     # check if the frame has data
                     if l > k + width:
                         # get the k'th sample, combine three bytes
-                        s = float(to_sample(fr[ k : k + width ]))
+                        s = float(to_sample(frb[ k : k + width ]))
 
                 else:
                     k = m * i + c
