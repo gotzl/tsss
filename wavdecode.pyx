@@ -26,9 +26,9 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
     cdef unsigned int i, j, k, f, l, m
     cdef int n = frame_count*channels
 
-    cdef const unsigned char[:] frb
-    cdef float[:] fr
-    cdef double[:] de
+    cdef const unsigned char[:] frb = bytearray()
+    cdef float[:] fr = np.array([], dtype=np.float32)
+    cdef double[:] de = np.array([])
     cdef double[:] df = np.zeros(n)
 
     cdef unsigned char[:] d = bytearray(n*width)
