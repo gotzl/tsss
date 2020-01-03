@@ -14,7 +14,7 @@ import time
 sys.path.append('tsss')
 import wavdecode
 
-DEBUG = True
+DEBUG = False
 
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bit
