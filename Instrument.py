@@ -112,14 +112,7 @@ class Instrument(object):
                 self.playing[idx] = Note.Note(*notes[idx], decay=self.decay)
 
     def cleanup(self):
-        # frames = list(map(lambda x: x.getframe(frame_count), list(self.playing.values())+list(self.ending.values())))
-        remove = [idx for idx in self.playing if self.playing[idx].done()]
-        for idx in remove:
-            self.playing[idx].close()
-            del self.playing[idx]
-
-        remove = [idx for idx in self.ending if self.ending[idx].done()]
-        for idx in remove:
-            self.ending[idx].close()
-            del self.ending[idx]
-
+        for l in [self.playing, self.ending]:
+            for idx in [idx for idx in l if l[idx].done()]:
+                l[idx].close()
+                del l[idx]
