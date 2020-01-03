@@ -29,8 +29,8 @@ class Instrument(object):
         from main import SAMPLERATE
         notes = self.on if is_on else self.off
 
-        # source = min(notes, key=lambda x: abs(x - target))
-        source = target - 13 if target > max(notes) else target + 13
+        source = min(notes, key=lambda x: abs(x - target))
+        # source = target - 13 if target > max(notes) else target + 13
         w = notes[source][0]
 
         id = "%s_%i"%(w, target)
