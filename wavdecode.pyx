@@ -1,4 +1,4 @@
-## cython: boundscheck=False, wraparound=False, nonecheck=False
+# cython: boundscheck=False, wraparound=False, nonecheck=False
 
 # import librosa
 import numpy as np
