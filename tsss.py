@@ -19,12 +19,21 @@ def getframes(instruments, frame_count):
     return frames
 
 
-class AudioCallback(object):
-    def __init__(self, channels, samplewidth, mutex, registers):
+class AudioStream(object):
+    def __init__(self, p, outdev, channels, samplewidth, samplerate, frames_per_buffer, mutex, registers):
         self.channels = channels
         self.samplewidth = samplewidth
         self.mutex = mutex
         self.registers = registers
+        self.stream = p.open(
+            format=p.get_format_from_width(samplewidth),
+            channels=channels,
+            rate=samplerate,
+            frames_per_buffer=frames_per_buffer,
+            start=False,
+            output=True,
+            output_device_index=outdev,
+            stream_callback=self)
 
     def __mixer(self, frame_count):
         self.mutex.acquire()
@@ -42,6 +51,13 @@ class AudioCallback(object):
     def __call__(self, in_data, frame_count, time_info, status):
         dd = self.__mixer(frame_count)
         return (dd, pyaudio.paContinue)
+
+    def start_stream(self):
+        self.stream.start_stream()
+
+    def close(self):
+        self.stream.stop_stream()
+        self.stream.close()
 
 
 class MidiInputHandler(object):

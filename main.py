@@ -17,13 +17,13 @@ FRAMESPERBUFFER = 512
 
 
 if __name__ == '__main__':
-    from tsss import MidiInputHandler, loop, AudioCallback
+    from tsss import MidiInputHandler, loop, AudioStream
     import Instrument
 
     from multiprocessing import Lock
     from rtmidi.midiutil import open_midiinput
-    import time
     import pyaudio
+    import time
     import yaml
 
     stream, p, midiin = None, None, None
@@ -43,16 +43,6 @@ if __name__ == '__main__':
                 print("Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
                 if (p.get_device_info_by_host_api_device_index(0, i).get('name') == 'pulse'):
                     outdev = i
-
-        stream = p.open(
-            format=p.get_format_from_width(SAMPLEWIDTH),
-            channels=CHANNELS,
-            rate=SAMPLERATE,
-            frames_per_buffer=FRAMESPERBUFFER,
-            start=False,
-            output=True,
-            output_device_index=outdev,
-            stream_callback=AudioCallback(CHANNELS, SAMPLEWIDTH, mutex, registers))
 
         now = time.time()
         yml = 'instruments.yaml'
@@ -82,6 +72,13 @@ if __name__ == '__main__':
         midihandler = MidiInputHandler(port_name, registers, mutex)
         midiin.set_callback(midihandler)
 
+        stream = AudioStream(
+            p, outdev,
+            CHANNELS,
+            SAMPLEWIDTH,
+            SAMPLERATE,
+            FRAMESPERBUFFER,
+            mutex, registers)
         stream.start_stream()
 
         if DEBUG:
@@ -95,7 +92,6 @@ if __name__ == '__main__':
         print("Exit.")
 
         if stream is not None:
-            stream.stop_stream()
             stream.close()
         if p is not None:
             p.terminate()
