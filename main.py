@@ -28,14 +28,11 @@ def mixer(frame_count):
     finally:
         mutex.release()
 
-    now = time.time()
-    newdata = wavdecode.mix(
+    return bytes(wavdecode.mix(
         frames,
         frame_count,
         CHANNELS,
-        SAMPLEWIDTH, 0)
-    # print(len(frames), len(newdata),time.time() - now)
-    return bytes(newdata)
+        SAMPLEWIDTH, 0))
 
 
 def callback(in_data, frame_count, time_info, status):
@@ -52,48 +49,38 @@ if __name__ == '__main__':
     import time
     import pyaudio
     import yaml
-    import signal
 
     sys.path.append('tsss')
     import wavdecode
 
-
-    stop = False
-
-    def signal_handler(sig, frame):
-        global stop
-        stop = True
-    signal.signal(signal.SIGINT, signal_handler)
+    stream, p, midiin = None, None, None
 
     try:
         midiin, port_name = open_midiinput(None)
-    except (EOFError, KeyboardInterrupt):
-        sys.exit()
+        p = pyaudio.PyAudio()
 
-    p = pyaudio.PyAudio()
+        outdev = None
+        info = p.get_host_api_info_by_index(0)
+        numdevices = info.get('deviceCount')
+        for i in range(0, numdevices):
+            if (p.get_device_info_by_host_api_device_index(0, i).get('maxOutputChannels')) > 0:
+                print("Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
+                if (p.get_device_info_by_host_api_device_index(0, i).get('name') == 'pulse'):
+                    outdev = i
 
-    outdev = None
-    info = p.get_host_api_info_by_index(0)
-    numdevices = info.get('deviceCount')
-    for i in range(0, numdevices):
-        if (p.get_device_info_by_host_api_device_index(0, i).get('maxOutputChannels')) > 0:
-            print("Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
-            if (p.get_device_info_by_host_api_device_index(0, i).get('name') == 'pulse'):
-                outdev = i
+        stream = p.open(
+            format=p.get_format_from_width(SAMPLEWIDTH),
+            channels=CHANNELS,
+            rate=SAMPLERATE,
+            frames_per_buffer=FRAMESPERBUFFER,
+            start=False,
+            output=True,
+            output_device_index=outdev,
+            stream_callback=callback)
 
-    stream = p.open(
-        format=p.get_format_from_width(SAMPLEWIDTH),
-        channels=CHANNELS,
-        rate=SAMPLERATE,
-        frames_per_buffer=FRAMESPERBUFFER,
-        start=False,
-        output=True,
-        output_device_index=outdev,
-        stream_callback=callback)
-
-    try:
         now = time.time()
-        instruments = yaml.safe_load(open('instruments.yaml'))
+        yml = 'instruments.yaml'
+        instruments = yaml.safe_load(open(yml))
 
         for name, inst in instruments.items():
             print('Opening %s'%name)
@@ -108,23 +95,32 @@ if __name__ == '__main__':
                         )
                     except Exception as e:
                         print("Unable to open %s"%regname)
-                        print(e)
+                        print("")
+
+        if len(registers) == 0:
+            raise Exception("Could not find any sample! Please check path in '%s'"%yml)
 
         print("Loading of instruments took %.2f seconds"%(time.time()-now))
         print("Starting Audio stream and MIDI input loop. You may start hitting the keys!")
         stream.start_stream()
 
-        eventloop(midiin, port_name, registers, stop, mutex)
+        if DEBUG:
+            registers[0, (203, 2)].active = True
 
-    except KeyboardInterrupt:
+        eventloop(midiin, port_name, registers, mutex)
+
+    except (EOFError, KeyboardInterrupt, SystemExit):
         print('')
     finally:
         print("Exit.")
 
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+        if p is not None:
+            p.terminate()
+        if midiin is not None:
+            midiin.close_port()
 
-        midiin.close_port()
         del midiin
 
