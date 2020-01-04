@@ -21,25 +21,9 @@ FRAMESPERBUFFER = 48000
 
 fs = sorted(glob.glob("/run/media/gotzl/stuff/realsamples/German Harpsichord 1741/Front 8'/*/*.wav"))
 wavs = [wave.open(f, 'rb') for f in fs[:10]]
-
 print(fs[-1])
-sample, sr = librosa.load(fs[-1], mono=False, sr=SAMPLERATE, duration=1)
-resample = [
-    librosa.effects.pitch_shift(
-        np.asfortranarray(sample[0]), sr, n_steps=2.),
-    librosa.effects.pitch_shift(
-        np.asfortranarray(sample[1]), sr, n_steps=2.)
-    ]
-sample = np.column_stack((sample[0], sample[1])).ravel()
-sample *= 0x800000
 
-# resample, sr = sf.read(fs[0])
-# resample = resample.T
-resample = np.column_stack((resample[0], resample[1])).ravel()
-resample *= 0x800000
-
-
-def resample_test():
+def player(notes):
     CHUNK = 1024
 
     p = pyaudio.PyAudio()
@@ -48,16 +32,12 @@ def resample_test():
                     rate=SAMPLERATE,
                     output=True)
 
-    note1 = Note.Note(sample, rate=sr, channel=CHANNELS, decay=np.array([]))
-    note2 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=np.array([]))
-
-    idx = 0
-    while not note1.done() or not note2.done():
-        note = note2 if note1.done() else note1
+    while True:
+        note = next( (x for x in notes if not x.done()), None)
+        if note is None: break
 
         fr, de = note.getframe(CHUNK)
-        frames = [(fr*0x100, de, len(fr), len(de) > 0, note.factor)]
-
+        frames = [(fr, de, len(fr), len(de) > 0, note.factor)]
 
         d = wavdecode.mix(
             frames,
@@ -65,25 +45,57 @@ def resample_test():
             CHANNELS,
             SAMPLEWIDTH, 0)
 
-        # print(fr[::4]*0x100)
-        # print((fr[::4]/0x100).astype('<i2').tobytes())
-        # print(bytes(d))
-        # print(len(d), len((fr[::4]/0x100).astype('<i2').tobytes()))
-
-        # works when using 16bit sample rate
-        # stream.write((fr[::4]/0x100).astype('<i2').tobytes())
-
         stream.write(d)
-        idx += CHUNK
 
-
-    note1.close()
-    note2.close()
+    map(Note.Note.close, notes)
 
     stream.stop_stream()
     stream.close()
 
     p.terminate()
+
+
+def resample_test():
+    w = wave.open(fs[-1], 'rb')
+    da = np.array(wavdecode.from24le(w.readframes(w.getframerate()))).astype(np.float32)
+
+    shift = 100
+    left, right = da[0::2], da[1::2]
+    lf, rf = np.fft.rfft(left), np.fft.rfft(right)
+    lf, rf = np.roll(lf, shift), np.roll(rf, shift)
+    lf[0:shift], rf[0:shift] = 0, 0
+
+    nl, nr = np.fft.irfft(lf), np.fft.irfft(rf)
+    ns = np.column_stack((nl, nr)).ravel().astype(np.float32)
+
+    note1 = Note.Note(da, rate=w.getframerate(), channel=w.getnchannels(), decay=np.array([], dtype=np.float32))
+    note2 = Note.Note(ns, rate=w.getframerate(), channel=w.getnchannels(), decay=np.array([], dtype=np.float32))
+
+    player([note1, note2])
+
+
+def librosa_resample_test():
+    sample, sr = librosa.load(fs[-1], mono=False, sr=SAMPLERATE, duration=1)
+    resample = [
+        librosa.effects.pitch_shift(
+            np.asfortranarray(sample[0]), sr, n_steps=2.),
+        librosa.effects.pitch_shift(
+            np.asfortranarray(sample[1]), sr, n_steps=2.)
+    ]
+    sample = np.column_stack((sample[0], sample[1])).ravel()
+    sample *= 0x800000
+    sample *= 0x100
+
+    # resample, sr = sf.read(fs[0])
+    # resample = resample.T
+    resample = np.column_stack((resample[0], resample[1])).ravel()
+    resample *= 0x800000
+    resample *= 0x100
+
+    note1 = Note.Note(sample, rate=sr, channel=CHANNELS, decay=np.array([], dtype=np.float32))
+    note2 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=np.array([], dtype=np.float32))
+
+    player([note1, note2])
 
 
 def mix_test():
@@ -127,9 +139,10 @@ def librosa_mix_test():
 
 
 
-# # cProfile.run('f()')
-# # resample_test()
+# cProfile.run('f()')
+resample_test()
+librosa_resample_test()
 # mix_test()
 # librosa_mix_test()
-cProfile.run('mix_test()')
+# cProfile.run('mix_test()')
 # cProfile.run('librosa_mix_test()')

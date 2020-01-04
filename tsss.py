@@ -14,18 +14,56 @@ def getframes(instruments, frame_count):
     return frames
 
 
-def eventloop(midiin, port_name, registers, mutex):
+class MidiInputHandler(object):
+    def __init__(self, port, registers, mutex):
+        self.port = port
+        self.registers = registers
+        self.mutex = mutex
+        self.offset = False
+        self._wallclock = time.time()
+
+    def __call__(self, event, data=None):
+        message, deltatime = event
+        self._wallclock += deltatime
+        print("[%s] @%0.6f %r" % (self.port, self._wallclock, message))
+
+        cmd = message[0]&0xfff0
+        chan = message[0]&0xf
+
+        if cmd in [NOTE_ON, NOTE_OFF]:
+            # some send NOTE_ON with velocity=0 instead of NOTE_OFF
+            if message[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
+
+            self.mutex.acquire()
+            try:
+                for key, reg in self.registers.items():
+                    if key[0] == chan and reg.active:
+                        reg.play(message[1] + (2 if self.offset else 0), cmd == NOTE_ON)
+            finally:
+                self.mutex.release()
+
+        else:
+            # enable/disable registers
+            for key, reg in self.registers.items():
+                if key[1] == (message[0], message[1]):
+                    reg.active = not reg.active
+                    print('%s register \'%s\''%('Enabling' if reg.active else 'Disabling', reg.name))
+
+            if message[0] == 0xCB:
+                # enable/disable offset from 399Hz -> 440Hz
+                if message[1] == 25:
+                    self.offset = not self.offset
+                    print('%s register offset'%('Enabling' if self.offset else 'Disabling'))
+
+
+def loop(registers, mutex, midihandler):
     from main import DEBUG
 
-    timer = time.time()
-    last = time.time()
-    last_active = 0
     n = 0
-    offset = False
+    last_active = 0
+    last = time.time()
 
     while True:
-        msg = midiin.get_message()
-
         delta = time.time() - last
         # if delta > 1 and n<2:
         # if n == 0:
@@ -36,13 +74,8 @@ def eventloop(midiin, port_name, registers, mutex):
             msg = [NOTE_ON if n%2 == 0 else NOTE_OFF,
                    _min + (n>>1)%(_max-_min),
                    50], delta
+            midihandler.__call__(msg)
             n += 1
-
-        if msg:
-            m, deltatime = msg
-            timer += deltatime
-            print("[%s] @%0.6f %r" % (port_name, timer, m))
-            eventhandler(m, registers, offset, mutex)
 
         mutex.acquire()
         try:
@@ -56,35 +89,4 @@ def eventloop(midiin, port_name, registers, mutex):
             print("Active notes %i"%active)
             last_active = active
 
-        time.sleep(0.001)
-
-
-def eventhandler(m, registers, offset, mutex):
-    cmd = m[0]&0xfff0
-    chan = m[0]&0xf
-
-    if cmd in [NOTE_ON, NOTE_OFF]:
-        # some send NOTE_ON with velocity=0 instead of NOTE_OFF
-        if m[2] == 0 and cmd == NOTE_ON: cmd = NOTE_OFF
-
-        mutex.acquire()
-        try:
-            for key, reg in registers.items():
-                if key[0] == chan and reg.active:
-                    reg.play(m[1] + (2 if offset else 0), cmd == NOTE_ON)
-        finally:
-            mutex.release()
-
-    else:
-        # enable/disable registers
-        for key, reg in registers.items():
-            if key[1] == (m[0], m[1]):
-                reg.active = not reg.active
-                print('%s register \'%s\''%('Enabling' if reg.active else 'Disabling', reg.name))
-
-        if m[0] == 0xCB:
-            # enable/disable offset from 399Hz -> 440Hz
-            if m[1] == 25:
-                offset = not offset
-                print('%s register offset'%('Enabling' if offset else 'Disabling'))
-
+        time.sleep(0.1)

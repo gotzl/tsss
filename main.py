@@ -41,7 +41,7 @@ def callback(in_data, frame_count, time_info, status):
 
 
 if __name__ == '__main__':
-    from tsss import eventloop, getframes
+    from tsss import getframes, MidiInputHandler, loop
     import Instrument
 
     from rtmidi.midiutil import open_midiinput
@@ -102,12 +102,16 @@ if __name__ == '__main__':
 
         print("Loading of instruments took %.2f seconds"%(time.time()-now))
         print("Starting Audio stream and MIDI input loop. You may start hitting the keys!")
+
+        midihandler = MidiInputHandler(port_name, registers, mutex)
+        midiin.set_callback(midihandler)
+
         stream.start_stream()
 
         if DEBUG:
             registers[0, (203, 2)].active = True
 
-        eventloop(midiin, port_name, registers, mutex)
+        loop(registers, mutex, midihandler)
 
     except (EOFError, KeyboardInterrupt, SystemExit):
         print('')
