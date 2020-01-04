@@ -60,7 +60,7 @@ if __name__ == '__main__':
                             ch['keys']
                         )
                     except Exception as e:
-                        print("Unable to open %s"%regname)
+                        print("Unable to open %s (Exception: %s)"%(regname,e))
                         print("")
 
         if len(registers) == 0:

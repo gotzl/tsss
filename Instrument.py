@@ -1,8 +1,14 @@
 import glob
 import os
+import multiprocessing
 from multiprocessing.pool import ThreadPool
 
 import librosa
+import pyfftw
+# FIXME: for some reason, when using the default fftlib (numpy) it is not
+# possible to catch the 'KeyboardInterrupt' in the main.py on SIGINT any more
+librosa.set_fftlib(pyfftw.interfaces.numpy_fft)
+
 import numpy as np
 
 import Note
@@ -36,14 +42,17 @@ class Instrument(object):
         id = "%s_%i"%(w, target)
         if id not in library:
             print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))
-            data, sr = librosa.load(w, mono=False, sr=SAMPLERATE, res_type='polyphase') # plyphase seems to be fast and as good as kaiser_best
+            data, sr = librosa.load(w, mono=False, sr=SAMPLERATE, res_type='polyphase') # polyphase seems to be fast and as good as kaiser_best
+
+            l = np.asfortranarray(data[0])
+            r = np.asfortranarray(data[1])
 
             l = librosa.effects.pitch_shift(
-                np.asfortranarray(data[0]),
-                sr, n_steps=target-source)
+                    l, sr,
+                    n_steps=target-source)
             r = librosa.effects.pitch_shift(
-                np.asfortranarray(data[1]),
-                sr, n_steps=target-source)
+                    r, sr,
+                    n_steps=target-source)
             # l, r = data[0], data[1]
 
             # store the data together with sample rate and nchannels
@@ -54,11 +63,14 @@ class Instrument(object):
         return target, library[id]
 
     def complete_samples(self, low, hi):
-        pool = ThreadPool(4)
-        on = pool.map(lambda i: self.create_sample(i, True),
-                      [i for i in range(low, hi+1) if i not in self.on])
-        off = pool.map(lambda i: self.create_sample(i, False),
-                       [i for i in range(low, hi+1) if i not in self.off])
+        pool = ThreadPool(multiprocessing.cpu_count())
+        on = pool.starmap(
+            self.create_sample,
+            [(i, True) for i in range(low, hi+1) if i not in self.on])
+        off = pool.starmap(
+            self.create_sample,
+            [(i, False) for i in range(low, hi+1) if i not in self.off])
+
         pool.close()
         pool.join()
 

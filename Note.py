@@ -2,11 +2,12 @@ import wave
 import os
 import numpy as np
 
+from main import DEBUG, SAMPLERATE
+
 
 class Note(object):
     def __init__(self, data, rate, channel, decay):
-        print("Starting note", self)
-        from main import SAMPLERATE
+        if DEBUG: print("Starting note", self)
         self.pos = 1
         self.data = data
         self.decay = decay
@@ -18,10 +19,10 @@ class Note(object):
         return self.decay_pos >= len(self.decay) or self.pos >= len(self.data)
 
     def close(self):
-        print("Closing note.", self)
+        if DEBUG: print("Closing note.", self)
 
     def end(self):
-        print("Ending note.", self)
+        if DEBUG: print("Ending note.", self)
         self.decay_pos = 0
 
     def getdecay(self, frame_count):
@@ -45,7 +46,7 @@ class WavNote(Note):
     def __init__(self, path, decay):
         self.wav = wave.open(path, 'rb')
         super().__init__(None, self.wav.getframerate(), self.wav.getnchannels(), decay)
-        print("Wave %s"%os.path.split(path)[1], self)
+        if DEBUG: print("Wave %s"%os.path.split(path)[1], self)
 
     def done(self):
         return self.decay_pos >= len(self.decay) or self.wav.tell() == self.wav.getnframes()
