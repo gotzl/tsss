@@ -26,7 +26,7 @@ class Note(object):
 
     def getdecay(self, frame_count):
         # create decay values
-        decay = np.array([])
+        decay = np.array([], dtype=self.decay.dtype)
         if self.decay_pos >= 0:
             decay = self.decay[self.decay_pos:self.decay_pos + 2*frame_count]
             decay = np.pad(decay, [(0, 2*frame_count - len(decay))], mode='constant')

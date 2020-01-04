@@ -95,6 +95,7 @@ class Instrument(object):
         self.decay = np.empty((CHANNELS*decay_fac.size,), dtype=decay_fac.dtype)
         for i in range(CHANNELS):
             self.decay[i::CHANNELS] = decay_fac
+        self.decay = self.decay.astype(np.float32)
 
     def play(self, idx, is_on):
         notes = self.on if is_on else self.off
