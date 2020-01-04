@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # TheSuperSimpleSampler
-from multiprocessing import Lock
 
 DEBUG = False
 
@@ -17,43 +16,20 @@ FRAMESPERBUFFER = 512
 # FRAMESPERBUFFER = 4096
 
 
-registers = {}
-mutex = Lock()
-
-
-def mixer(frame_count):
-    mutex.acquire()
-    try:
-        frames = getframes(registers.values(), frame_count)
-    finally:
-        mutex.release()
-
-    return bytes(wavdecode.mix(
-        frames,
-        frame_count,
-        CHANNELS,
-        SAMPLEWIDTH, 0))
-
-
-def callback(in_data, frame_count, time_info, status):
-    dd = mixer(frame_count)
-    return (dd, pyaudio.paContinue)
-
-
 if __name__ == '__main__':
-    from tsss import getframes, MidiInputHandler, loop
+    from tsss import MidiInputHandler, loop, AudioCallback
     import Instrument
 
+    from multiprocessing import Lock
     from rtmidi.midiutil import open_midiinput
-    import sys
     import time
     import pyaudio
     import yaml
 
-    sys.path.append('tsss')
-    import wavdecode
-
     stream, p, midiin = None, None, None
+
+    registers = {}
+    mutex = Lock()
 
     try:
         midiin, port_name = open_midiinput(None)
@@ -76,7 +52,7 @@ if __name__ == '__main__':
             start=False,
             output=True,
             output_device_index=outdev,
-            stream_callback=callback)
+            stream_callback=AudioCallback(CHANNELS, SAMPLEWIDTH, mutex, registers))
 
         now = time.time()
         yml = 'instruments.yaml'

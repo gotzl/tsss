@@ -1,6 +1,11 @@
 import time
+import sys
 
+import pyaudio
 from rtmidi.midiconstants import NOTE_ON, NOTE_OFF
+
+sys.path.append('tsss')
+import wavdecode
 
 
 def getframes(instruments, frame_count):
@@ -12,6 +17,31 @@ def getframes(instruments, frame_count):
             frames.append((fr, de, len(fr), len(de) > 0, note.factor))
 
     return frames
+
+
+class AudioCallback(object):
+    def __init__(self, channels, samplewidth, mutex, registers):
+        self.channels = channels
+        self.samplewidth = samplewidth
+        self.mutex = mutex
+        self.registers = registers
+
+    def __mixer(self, frame_count):
+        self.mutex.acquire()
+        try:
+            frames = getframes(self.registers.values(), frame_count)
+        finally:
+            self.mutex.release()
+
+        return bytes(wavdecode.mix(
+            frames,
+            frame_count,
+            self.channels,
+            self.samplewidth, 0))
+
+    def __call__(self, in_data, frame_count, time_info, status):
+        dd = self.__mixer(frame_count)
+        return (dd, pyaudio.paContinue)
 
 
 class MidiInputHandler(object):
