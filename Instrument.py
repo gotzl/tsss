@@ -1,16 +1,14 @@
 import glob
 import os
+import sys
+import wave
 import multiprocessing
 from multiprocessing.pool import ThreadPool
 
-import librosa
-import pyfftw
-# FIXME: for some reason, when using the default fftlib (numpy) it is not
-# possible to catch the 'KeyboardInterrupt' in the main.py on SIGINT any more
-librosa.set_fftlib(pyfftw.interfaces.numpy_fft)
-
 import numpy as np
 
+sys.path.append('tsss')
+import wavdecode
 import Note
 
 library = {}
@@ -42,23 +40,12 @@ class Instrument(object):
         id = "%s_%i"%(w, target)
         if id not in library:
             print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))
-            data, sr = librosa.load(w, mono=False, sr=SAMPLERATE, res_type='polyphase') # polyphase seems to be fast and as good as kaiser_best
-
-            l = np.asfortranarray(data[0])
-            r = np.asfortranarray(data[1])
-
-            l = librosa.effects.pitch_shift(
-                    l, sr,
-                    n_steps=target-source)
-            r = librosa.effects.pitch_shift(
-                    r, sr,
-                    n_steps=target-source)
-            # l, r = data[0], data[1]
+            w = wave.open(w, 'rb')
+            da = np.array(wavdecode.from24le(w.readframes(w.getnframes()))).astype(np.float32)
+            ns = wavdecode.pitchshift(da, w.getframerate(), target-source, w.getframerate()/SAMPLERATE)
 
             # store the data together with sample rate and nchannels
-            library[id] = [np.column_stack((l, r)).ravel(), sr, 2]
-            library[id][0] *= 0x800000 # compensate shift of librosa to -1 / 1 range
-            library[id][0] *= 0x100    # 'special' hacky treatment of 24 bit signed integer
+            library[id] = [ns, SAMPLERATE, 2]
 
         return target, library[id]
 

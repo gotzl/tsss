@@ -31,6 +31,31 @@ cpdef unsigned char[:] to24le(const np.int32_t[:] df):
         from_sample(df[i], d, k)
     return d
 
+cpdef np.float32_t[:] pitchshift(np.float32_t[:] samples, np.int32_t sr, np.int8_t shift, np.uint8_t fac):
+    cdef np.float32_t[:] left = samples[0::2], right = samples[1::2]
+
+    cdef np.float32_t octaves = shift/12.
+    cdef np.int32_t new_sr = int(sr * (2.0 ** octaves))
+    cdef np.float32_t ratio = new_sr/np.float(sr)
+
+    cdef np.uint32_t i, x0, x1
+    cdef np.float32_t x, y0l, y0r, y1l, y1r
+
+    lr, rr = [], []
+    for i in range(len(left)):
+        x = i * ratio
+        x0 = int(x)
+        x1 = x0 + 1
+
+        if x1 >= len(left): break
+
+        y0l, y0r = left[x0], right[x0]
+        y1l, y1r = left[x1], right[x1]
+        lr.append(y0l + (x - x0) * (y1l - y0l)/(x1 - x0))
+        rr.append(y0l + (x - x0) * (y1r - y0r)/(x1 - x0))
+
+    return np.column_stack((lr[::fac], rr[::fac])).ravel().astype(np.float32)
+
 def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width, np.uint8_t shift):
     cdef np.float32_t v, s
     cdef np.uint8_t dec, c

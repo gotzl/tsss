@@ -11,7 +11,11 @@ import wave
 import numpy as np
 import cProfile
 import librosa
+import pyfftw
+librosa.set_fftlib(pyfftw.interfaces.numpy_fft)
 import soundfile as sf
+from pydub import AudioSegment
+from pydub.playback import play
 
 CHANNELS = 2
 SAMPLEWIDTH = 3 # 24bi
@@ -23,12 +27,27 @@ fs = sorted(glob.glob("/run/media/gotzl/stuff/realsamples/German Harpsichord 174
 wavs = [wave.open(f, 'rb') for f in fs[:10]]
 print(fs[-1])
 
+# calculate the decay factor
+decay = .6 * SAMPLERATE
+decay_x = np.linspace(0, decay, int(np.ceil(decay)))
+decay_fac = np.array(list(map(lambda x: np.exp(-x/(decay/4)), decay_x))).clip(min=0)
+
+# plt.plot(decay_x,decay_fac)
+# plt.show()
+
+decay = np.empty((CHANNELS*decay_fac.size,), dtype=decay_fac.dtype)
+for i in range(CHANNELS):
+    decay[i::CHANNELS] = decay_fac
+decay = decay.astype(np.float32)
+
+
 def player(notes):
-    CHUNK = 1024
+    CHUNK = 512
 
     p = pyaudio.PyAudio()
     stream = p.open(format=p.get_format_from_width(SAMPLEWIDTH),
                     channels=CHANNELS,
+                    output_device_index=11,
                     rate=SAMPLERATE,
                     output=True)
 
@@ -74,28 +93,71 @@ def resample_test():
     player([note1, note2])
 
 
+def resample_test2():
+    w = wave.open(fs[-1], 'rb')
+    da = np.array(wavdecode.from24le(w.readframes(w.getframerate()))).astype(np.float32)
+
+    ns = wavdecode.pitchshift(da, w.getframerate(), 2, 1)
+
+    note1 = Note.Note(da, rate=w.getframerate(), channel=w.getnchannels(), decay=np.array([], dtype=np.float32))
+    note2 = Note.Note(ns, rate=w.getframerate(), channel=w.getnchannels(), decay=np.array([], dtype=np.float32))
+
+    player([note1, note2])
+
+
 def librosa_resample_test():
-    sample, sr = librosa.load(fs[-1], mono=False, sr=SAMPLERATE, duration=1)
-    resample = [
-        librosa.effects.pitch_shift(
-            np.asfortranarray(sample[0]), sr, n_steps=2.),
-        librosa.effects.pitch_shift(
-            np.asfortranarray(sample[1]), sr, n_steps=2.)
-    ]
+    sample, sr = librosa.load(fs[-1], mono=False, sr=SAMPLERATE, duration=1, res_type='polyphase')
+    l = np.asfortranarray(sample[0])
+    r = np.asfortranarray(sample[1])
+
+    l = librosa.effects.pitch_shift(
+        l, sr,
+        n_steps=2.)
+    r = librosa.effects.pitch_shift(
+        r, sr,
+        n_steps=2.)
+
     sample = np.column_stack((sample[0], sample[1])).ravel()
     sample *= 0x800000
     sample *= 0x100
 
     # resample, sr = sf.read(fs[0])
     # resample = resample.T
-    resample = np.column_stack((resample[0], resample[1])).ravel()
+    resample = np.column_stack((l,r)).ravel()
     resample *= 0x800000
     resample *= 0x100
 
-    note1 = Note.Note(sample, rate=sr, channel=CHANNELS, decay=np.array([], dtype=np.float32))
-    note2 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=np.array([], dtype=np.float32))
+    note1 = Note.Note(sample, rate=sr, channel=CHANNELS, decay=decay)
+    note2 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=decay)
+    note3 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=decay)
+    note4 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=decay)
 
-    player([note1, note2])
+    player([note2, note3, note4])
+
+
+def pydub_resample_test():
+    sample = AudioSegment.from_wav(fs[-1])
+
+    # shift the pitch up by half an octave (speed will increase proportionally)
+    octaves = 0.5
+
+    new_sample_rate = int(sample.frame_rate * (2.0 ** octaves))
+
+    # keep the same samples but tell the computer they ought to be played at the
+    # new, higher sample rate. This file sounds like a chipmunk but has a weird sample rate.
+    hipitch_sound = sample._spawn(sample.raw_data, overrides={'frame_rate': new_sample_rate})
+
+    # now we just convert it to a common sample rate (44.1k - standard audio CD) to
+    # make sure it works in regular audio players. Other than potentially losing audio quality (if
+    # you set it too low - 44.1k is plenty) this should now noticeable change how the audio sounds.
+    hipitch_sound = hipitch_sound.set_frame_rate(48000)
+    play(hipitch_sound)
+
+    hipitch_sound = np.frombuffer(hipitch_sound.raw_data, dtype=np.int32)
+    # hipitch_sound*= 0x100
+
+    # note = Note.Note(hipitch_sound, rate=48000, channel=CHANNELS, decay=decay)
+    # player([note])
 
 
 def mix_test():
@@ -140,8 +202,10 @@ def librosa_mix_test():
 
 
 # cProfile.run('f()')
-resample_test()
-librosa_resample_test()
+# resample_test()
+resample_test2()
+# librosa_resample_test()
+# pydub_resample_test()
 # mix_test()
 # librosa_mix_test()
 # cProfile.run('mix_test()')

@@ -1,7 +1,5 @@
 pyaudio
 python-rtmidi
 numpy
-pyfftw
-librosa
 yaml
 cython
