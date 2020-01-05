@@ -42,7 +42,7 @@ cpdef np.float32_t[:] pitchshift(np.float32_t[:] samples, np.int32_t sr, np.int8
     cdef np.float32_t x, y0l, y0r, y1l, y1r
 
     lr, rr = [], []
-    for i in range(n):
+    for i from 0 <= i < n by fac:
         x = i * ratio
         x0 = int(x)
         x1 = x0 + 1
@@ -51,10 +51,10 @@ cpdef np.float32_t[:] pitchshift(np.float32_t[:] samples, np.int32_t sr, np.int8
 
         y0l, y0r = left[x0], right[x0]
         y1l, y1r = left[x1], right[x1]
-        lr.append(y0l + (x - x0) * (y1l - y0l)/(x1 - x0))
-        rr.append(y0l + (x - x0) * (y1r - y0r)/(x1 - x0))
+        lr.append(y0l + (x - x0) * (y1l - y0l)) # (y1l - y0l)/(x1 - x0) -> is always divided by 1
+        rr.append(y0l + (x - x0) * (y1r - y0r))
 
-    return np.column_stack((lr[::fac], rr[::fac])).ravel().astype(np.float32)
+    return np.column_stack((lr, rr)).ravel().astype(np.float32)
 
 def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width, np.uint8_t shift):
     cdef np.float32_t v, s
