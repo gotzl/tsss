@@ -38,16 +38,16 @@ cpdef np.float32_t[:] pitchshift(np.float32_t[:] samples, np.int32_t sr, np.int8
     cdef np.int32_t new_sr = int(sr * (2.0 ** octaves))
     cdef np.float32_t ratio = new_sr/np.float(sr)
 
-    cdef np.uint32_t i, x0, x1
+    cdef np.uint32_t i, x0, x1, n = len(left)
     cdef np.float32_t x, y0l, y0r, y1l, y1r
 
     lr, rr = [], []
-    for i in range(len(left)):
+    for i in range(n):
         x = i * ratio
         x0 = int(x)
         x1 = x0 + 1
 
-        if x1 >= len(left): break
+        if x1 >= n: break
 
         y0l, y0r = left[x0], right[x0]
         y1l, y1r = left[x1], right[x1]
