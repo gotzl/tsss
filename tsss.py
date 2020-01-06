@@ -1,5 +1,6 @@
 import time
 import sys
+import numpy as np
 
 import pyaudio
 from rtmidi.midiconstants import NOTE_ON, NOTE_OFF
@@ -42,11 +43,30 @@ class AudioStream(object):
         finally:
             self.mutex.release()
 
-        return bytes(wavdecode.mix(
+        data = np.array(wavdecode.mix(
             frames,
             frame_count,
-            self.channels,
-            self.samplewidth, 0))
+            self.channels), dtype=np.float32)
+
+        data = data.astype(np.int32)
+
+        # scale by 4 to prevent clipping
+        scale = 4
+
+        if self.samplewidth == 3:
+            data //= scale
+            data = wavdecode.to24le(data)
+
+        elif self.samplewidth == 2:
+            # additional scaling for 16bit integers
+            data//= 0x80*scale
+            data = data.astype('<i2')
+
+        elif self.samplewidth == 1:
+            data //= 0x8000*scale
+            data = data.astype('<i1')
+
+        return data
 
     def __call__(self, in_data, frame_count, time_info, status):
         dd = self.__mixer(frame_count)

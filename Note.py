@@ -49,6 +49,7 @@ class Note(object):
 class WavNote(Note):
     def __init__(self, path, decay, out_samplerate):
         self.wav = wave.open(path, 'rb')
+        self.width = self.wav.getsampwidth()
         super().__init__(None, self.wav.getframerate(), self.wav.getnchannels(), decay, out_samplerate)
         if DEBUG: print("Wave %s"%os.path.split(path)[1], self)
 
@@ -60,6 +61,19 @@ class WavNote(Note):
         self.wav.close()
 
     def getframe(self, frame_count):
-        # read frames from the wave, its in bytes, so be aware of 16/24 bitnes...
+        # read frames from the wave
         _bytes = self.wav.readframes(frame_count * self.factor)
-        return _bytes, self.getdecay(frame_count)
+
+        # 24bit data can not be interpreted easily... just return bytes and take care of of decoding when mixing
+        if self.width == 3:
+            return _bytes, self.getdecay(frame_count)
+        if self.width == 2:
+            data = np.frombuffer(_bytes, dtype='<i2')
+        elif self.width == 1:
+            data = np.frombuffer(_bytes, dtype='<i1')
+        else:
+            return None
+
+        # the mixing code expects floats
+        return data.astype(np.float32), self.getdecay(frame_count)
+

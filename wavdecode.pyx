@@ -6,12 +6,12 @@ cimport numpy as np
 cimport cython
 
 cdef np.int32_t to_sample(const unsigned char[:] bits):
-    return (bits[2] << 24) | (bits[1] << 16) | (bits[0] << 8)
+    return ((bits[2] << 24) | (bits[1] << 16) | (bits[0] << 8)) >> 8
 
 cdef void from_sample(np.int32_t sample, unsigned char[:] d, np.uint32_t idx):
-    d[idx] = (sample>>8)&0xff
-    d[idx+1] = (sample>>16)&0xff
-    d[idx+2] = (sample>>24)&0xff
+    d[idx] = sample&0xff
+    d[idx+1] = (sample>>8)&0xff
+    d[idx+2] = (sample>>16)&0xff
 
 cpdef np.int32_t[:] from24le(const unsigned char[:] _bytes):
     cdef np.uint32_t i, n = int(len(_bytes)/3)
@@ -56,7 +56,8 @@ cpdef np.float32_t[:] pitchshift(np.float32_t[:] samples, np.int32_t sr, np.int8
 
     return np.column_stack((lr, rr)).ravel().astype(np.float32)
 
-def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t width, np.uint8_t shift):
+def mix(list frames, np.uint32_t frame_count, np.uint8_t channels):
+    cdef np.uint8_t width = 3
     cdef np.float32_t v, s
     cdef np.uint8_t dec, c
     cdef np.uint32_t i, j, k, f, l, m, n = frame_count*channels
@@ -66,10 +67,8 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
     cdef np.float32_t[:] de = np.array([], dtype=np.float32)
     cdef np.float32_t[:] df = np.zeros(n, dtype=np.float32)
 
-    cdef unsigned char[:] d = bytearray(n*width)
-
     f = len(frames)
-    if f == 0: return d
+    if f == 0: return df
 
     # loop over frames
     for j in range(f):
@@ -79,7 +78,6 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
         if _bytes:
             frb = _fr
         else: fr = _fr
-
 
         # loop over l/r sample values
         for i from 0 <= i < n by channels:
@@ -103,10 +101,4 @@ def mix(list frames, np.uint32_t frame_count, np.uint8_t channels, np.uint8_t wi
 
                 # update the current sample value
                 df[i + c] += s
-
-    for i in range(n):
-        k = width * i
-        # divide by 4 to prevent clipping
-        from_sample(int(df[i]/4), d, k)
-
-    return d
+    return df

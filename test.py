@@ -119,13 +119,11 @@ def librosa_resample_test():
 
     sample = np.column_stack((sample[0], sample[1])).ravel()
     sample *= 0x800000
-    sample *= 0x100
 
     # resample, sr = sf.read(fs[0])
     # resample = resample.T
     resample = np.column_stack((l,r)).ravel()
     resample *= 0x800000
-    resample *= 0x100
 
     note1 = Note.Note(sample, rate=sr, channel=CHANNELS, decay=decay)
     note2 = Note.Note(resample, rate=sr, channel=CHANNELS, decay=decay)
@@ -193,7 +191,7 @@ def librosa_mix_test():
         frame[1] += blk[1][::4]
 
     frame = np.column_stack((frame[0], frame[1])).ravel()
-    frame *= 0x800000*0x100
+    frame *= 0x800000
     frame /= 4
     data = frame.astype(np.int32)
     _bytes = wavdecode.to24le(data)

@@ -108,8 +108,8 @@ if __name__ == '__main__':
         print("Only 2 channel output is supported.")
         sys.exit(1)
 
-    if args.samplewidth != 3:
-        print("Only a output sample width of 24bit is supported.")
+    if args.samplewidth == 1:
+        print("Output sample width of 8bit is not supported.")
         sys.exit(1)
 
     frame_count = 2048 // (192000 // args.samplerate)

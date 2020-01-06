@@ -28,10 +28,10 @@ Note that the output samplerate has to be an even divider of the samples samplra
 The default is 48000, so if your samples have a rate of 44100 or 88200, use
 the '-r 44100' switch.
 
-Also, currently only 24bit stereo output is supported.
+As of now, only 24bit 2 channel samples @192KHz have been tested.
 
 # ISSUES
 * For keys where no sample exists, the samples are resampled to lower/higher pitch. 
-This takes a large amount of time.
+This takes a large amount of time (and RAM).
 * Samples are expected to start with a number that reflects their tune relative to each other
-* Expects 24bit LE 2 channel wavs
+* Samples are expected to have 2 channels

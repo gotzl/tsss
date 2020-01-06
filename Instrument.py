@@ -41,9 +41,25 @@ class Instrument(object):
         id = "%s_%i"%(w, target)
         if id not in library:
             print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))
+
             w = wave.open(w, 'rb')
-            da = np.array(wavdecode.from24le(w.readframes(w.getnframes()))).astype(np.float32)
-            ns = wavdecode.pitchshift(da, w.getframerate(), target-source, w.getframerate()//self.out_samplerate)
+
+            _bytes = w.readframes(w.getnframes())
+            if w.getsampwidth() == 3:
+                da = np.array(wavdecode.from24le(_bytes))
+            elif w.getsampwidth() == 2:
+                da = np.frombuffer(_bytes, dtype='<i2')
+            elif w.getsampwidth() == 1:
+                da = np.frombuffer(_bytes, dtype='<i1')
+            else:
+                return None
+
+            da = da.astype(np.float32)
+            ns = wavdecode.pitchshift(
+                da,
+                w.getframerate(),
+                target-source,
+                w.getframerate()//self.out_samplerate)
 
             # store the data together with sample rate and nchannels
             library[id] = [ns, self.out_samplerate, self.out_channels]
