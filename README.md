@@ -23,11 +23,15 @@ To start the sampler, type
 ```bash
 ./main.py
 ```
+There are some commandline options to control the output samplerate/width and buffer size.
+Note that the output samplerate has to be an even divider of the samples samplrate.
+The default is 48000, so if your samples have a rate of 44100 or 88200, use
+the '-r 44100' switch.
 
+Also, currently only 24bit stereo output is supported.
 
 # ISSUES
 * For keys where no sample exists, the samples are resampled to lower/higher pitch. 
 This takes a large amount of time.
 * Samples are expected to start with a number that reflects their tune relative to each other
-* Code is a bit messy...
 * Expects 24bit LE 2 channel wavs

@@ -2,17 +2,21 @@ import wave
 import os
 import numpy as np
 
-from main import DEBUG, SAMPLERATE
+from main import DEBUG
 
 
 class Note(object):
-    def __init__(self, data, rate, channel, decay):
+    def __init__(self, data, rate, channel, decay, out_samplerate):
         if DEBUG: print("Starting note", self)
         self.pos = 1
         self.data = data
         self.decay = decay
         self.decay_pos = -1
-        self.factor = int(np.ceil(rate/SAMPLERATE))
+
+        if rate % out_samplerate != 0:
+            raise Exception("The sample frequency of '%i' is not an even multiple of the output sample rate '%i."%(rate, out_samplerate))
+
+        self.factor = rate//out_samplerate
         self.channel = channel
 
     def done(self):
@@ -43,9 +47,9 @@ class Note(object):
 
 
 class WavNote(Note):
-    def __init__(self, path, decay):
+    def __init__(self, path, decay, out_samplerate):
         self.wav = wave.open(path, 'rb')
-        super().__init__(None, self.wav.getframerate(), self.wav.getnchannels(), decay)
+        super().__init__(None, self.wav.getframerate(), self.wav.getnchannels(), decay, out_samplerate)
         if DEBUG: print("Wave %s"%os.path.split(path)[1], self)
 
     def done(self):

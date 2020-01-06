@@ -15,9 +15,11 @@ library = {}
 
 
 class Instrument(object):
-    def __init__(self, base, lowest, name, keys):
+    def __init__(self, base, lowest, name, keys, out_samplerate, out_channels):
         self.base = base
         self.name = name
+        self.out_samplerate = out_samplerate
+        self.out_channels = out_channels
         self.on = {}
         self.off = {}
         self.playing = {}
@@ -30,7 +32,6 @@ class Instrument(object):
         self.complete_samples(*keys)
 
     def create_sample(self, target, is_on):
-        from main import SAMPLERATE
         notes = self.on if is_on else self.off
 
         source = min(notes, key=lambda x: abs(x - target))
@@ -42,10 +43,10 @@ class Instrument(object):
             print('Creating note from %s, %i steps (%i %i)'%(os.path.split(w)[1], target-source, target, source))
             w = wave.open(w, 'rb')
             da = np.array(wavdecode.from24le(w.readframes(w.getnframes()))).astype(np.float32)
-            ns = wavdecode.pitchshift(da, w.getframerate(), target-source, w.getframerate()/SAMPLERATE)
+            ns = wavdecode.pitchshift(da, w.getframerate(), target-source, w.getframerate()//self.out_samplerate)
 
             # store the data together with sample rate and nchannels
-            library[id] = [ns, SAMPLERATE, 2]
+            library[id] = [ns, self.out_samplerate, self.out_channels]
 
         return target, library[id]
 
@@ -65,7 +66,6 @@ class Instrument(object):
         self.off.update({i:j for i,j in off})
 
     def get_samples(self, lowest):
-        from main import CHANNELS, SAMPLERATE
         offset = None
         for f in sorted(glob.glob(str(os.path.join(self.base, self.name) + '/*/*.wav'))):
             wav = os.path.split(f)
@@ -84,16 +84,16 @@ class Instrument(object):
             notes[idx] = sorted(notes[idx])
 
         # calculate the decay factor
-        decay = .6 * SAMPLERATE
+        decay = .6 * self.out_samplerate
         decay_x = np.linspace(0, decay, int(np.ceil(decay)))
         decay_fac = np.array(list(map(lambda x: np.exp(-x/(decay/4)), decay_x))).clip(min=0)
 
         # plt.plot(decay_x,decay_fac)
         # plt.show()
 
-        self.decay = np.empty((CHANNELS*decay_fac.size,), dtype=decay_fac.dtype)
-        for i in range(CHANNELS):
-            self.decay[i::CHANNELS] = decay_fac
+        self.decay = np.empty((self.out_channels*decay_fac.size,), dtype=decay_fac.dtype)
+        for i in range(self.out_channels):
+            self.decay[i::self.out_channels] = decay_fac
         self.decay = self.decay.astype(np.float32)
 
     def play(self, idx, is_on):
@@ -109,10 +109,10 @@ class Instrument(object):
 
         if idx in notes.keys():
             if isinstance(notes[idx][0], str):
-                self.playing[idx] = Note.WavNote(notes[idx][self.group%len(notes[idx])], decay=self.decay)
+                self.playing[idx] = Note.WavNote(notes[idx][self.group%len(notes[idx])], decay=self.decay, out_samplerate=self.out_samplerate)
                 self.group += 1
             else:
-                self.playing[idx] = Note.Note(*notes[idx], decay=self.decay)
+                self.playing[idx] = Note.Note(*notes[idx], decay=self.decay, out_samplerate=self.out_samplerate)
 
     def cleanup(self):
         for l in [self.playing, self.ending]:
