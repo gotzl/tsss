@@ -1,5 +1,5 @@
 pyaudio
 python-rtmidi
 numpy
-yaml
+pyyaml
 cython

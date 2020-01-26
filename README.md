@@ -5,12 +5,16 @@ for this combination, eg the selection of registers via MIDI commands send by th
 
 
 # Install
+I assume that python3 is your system default. The following will fetch the code and install dependencies.
+For this to work, you need a CPP compiler installed on your system (eg `sudo apt-get install build-essential`).
+For Windows, I'd recomment to install [python 3.6](https://www.python.org/downloads/release/python-368/) (this installs pip as well) and [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2019).
+
+
 ```bash
 git clone https://github.com/gotzl/tsss.git
-pip3 install -r requirements.txt # --user
-python3 setup.py build_ext --inplace
+pip install -r requirements.txt # --user
+python setup.py build_ext --inplace
 ``` 
-For this to work, you need a CPP compiler and portaudio installed on your system.
 
 
 # Running it
